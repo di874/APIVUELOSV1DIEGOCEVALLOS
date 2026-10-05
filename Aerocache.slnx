@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Aerocache.API/Aerocache.API.csproj" />
+  <Project Path="Aerocache.Business/Aerocache.Business.csproj" />
+  <Project Path="Aerocache.DataAccess/Aerocache.DataAccess.csproj" />
+  <Project Path="Aerocache.DataManagement/Aerocache.DataManagement.csproj" />
+</Solution>

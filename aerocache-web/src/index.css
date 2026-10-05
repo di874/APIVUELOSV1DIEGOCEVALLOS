@@ -1,0 +1,93 @@
+:root {
+  --color-latam-navy: #001935;
+  --color-latam-navy-dark: #001124;
+  --color-latam-coral: #e8114b;
+  --color-latam-coral-hover: #cf0e41;
+  --color-latam-blue-light: #eef4fc;
+  --color-latam-gray-bg: #f3f5f8;
+  --color-latam-text: #1b2734;
+  --color-latam-text-muted: #536b82;
+  --color-latam-border: #dbe2ea;
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-latam-gray-bg);
+  color: var(--color-latam-text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: all 0.2s ease-in-out;
+}
+
+input, select {
+  font-family: inherit;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+::-webkit-scrollbar-thumb {
+  background: #c1c7cf;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a0a6b0;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Airline Boarding Pass Cutouts */
+.boarding-pass-cutout {
+  position: relative;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 25, 53, 0.12);
+  overflow: hidden;
+}
+
+.boarding-pass-cutout::before,
+.boarding-pass-cutout::after {
+  content: '';
+  position: absolute;
+  top: 68%;
+  width: 28px;
+  height: 28px;
+  background-color: var(--color-latam-gray-bg);
+  border-radius: 50%;
+  z-index: 10;
+}
+
+.boarding-pass-cutout::before {
+  left: -14px;
+}
+
+.boarding-pass-cutout::after {
+  right: -14px;
+}

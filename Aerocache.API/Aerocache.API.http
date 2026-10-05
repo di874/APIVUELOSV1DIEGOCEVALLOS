@@ -1,0 +1,6 @@
+@Aerocache.API_HostAddress = http://localhost:5224
+
+GET {{Aerocache.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -46,20 +46,20 @@ namespace Aerocache.Business.Services
 
         public async Task<AdminDashboardStatsDto> GetDashboardStatsAsync()
         {
-            var bookings = await _uow.Bookings.Query()
-                .Include(b => b.Passengers)
-                .OrderByDescending(b => b.CreatedAt)
+            var bookings = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
+                .OrderByDescending(b => b.FechaCreacion)
                 .ToListAsync();
 
-            var flights = await _uow.Flights.Query()
-                .Include(f => f.CabinFares)
+            var flights = await _uow.Vuelos.Query()
+                .Include(f => f.TarifasCabina)
                 .ToListAsync();
 
             int totalBookings = bookings.Count;
-            int confirmed = bookings.Count(b => b.Status == "CONFIRMED");
-            int cancelled = bookings.Count(b => b.Status == "CANCELLED");
-            int totalPassengers = bookings.Where(b => b.Status == "CONFIRMED").Sum(b => b.Passengers.Count);
-            decimal totalRevenue = bookings.Where(b => b.Status == "CONFIRMED").Sum(b => b.GrandTotalAmount);
+            int confirmed = bookings.Count(b => b.Estado == "CONFIRMED");
+            int cancelled = bookings.Count(b => b.Estado == "CANCELLED");
+            int totalPassengers = bookings.Where(b => b.Estado == "CONFIRMED").Sum(b => b.Pasajeros.Count);
+            decimal totalRevenue = bookings.Where(b => b.Estado == "CONFIRMED").Sum(b => b.MontoTotalGeneral);
 
             // Routes breakdown
             var routePairs = new[]
@@ -73,15 +73,15 @@ namespace Aerocache.Business.Services
             foreach (var rp in routePairs)
             {
                 var routeBookings = bookings.Where(b => 
-                    (b.OriginIata == rp.From && b.DestinationIata == rp.To) ||
-                    (b.OriginIata == rp.To && b.DestinationIata == rp.From));
+                    (b.OrigenIata == rp.From && b.DestinoIata == rp.To) ||
+                    (b.OrigenIata == rp.To && b.DestinoIata == rp.From));
 
                 routeStats.Add(new RouteStatDto
                 {
                     Route = rp.Route,
-                    FlightsCount = flights.Count(f => (f.OriginIata == rp.From && f.DestinationIata == rp.To) || (f.OriginIata == rp.To && f.DestinationIata == rp.From)),
-                    BookingsCount = routeBookings.Count(b => b.Status == "CONFIRMED"),
-                    TotalRevenue = routeBookings.Where(b => b.Status == "CONFIRMED").Sum(b => b.GrandTotalAmount)
+                    FlightsCount = flights.Count(f => (f.OrigenIata == rp.From && f.DestinoIata == rp.To) || (f.OrigenIata == rp.To && f.DestinoIata == rp.From)),
+                    BookingsCount = routeBookings.Count(b => b.Estado == "CONFIRMED"),
+                    TotalRevenue = routeBookings.Where(b => b.Estado == "CONFIRMED").Sum(b => b.MontoTotalGeneral)
                 });
             }
 
@@ -89,9 +89,9 @@ namespace Aerocache.Business.Services
             var flightOccupancies = new List<FlightOccupancyDto>();
             foreach (var f in flights.Take(12))
             {
-                var flightBookings = bookings.Where(b => b.FlightId == f.Id && b.Status == "CONFIRMED");
-                int bookedSeats = flightBookings.Sum(b => b.Passengers.Count);
-                if (bookedSeats == 0 && (f.FlightNumber == "AC1401" || f.FlightNumber == "AC1403"))
+                var flightBookings = bookings.Where(b => b.VueloId == f.Id && b.Estado == "CONFIRMED");
+                int bookedSeats = flightBookings.Sum(b => b.Pasajeros.Count);
+                if (bookedSeats == 0 && (f.NumeroVuelo == "AC1401" || f.NumeroVuelo == "AC1403"))
                 {
                     // realistic booked seats simulation for active demo flights
                     bookedSeats = 74;
@@ -102,10 +102,10 @@ namespace Aerocache.Business.Services
                 flightOccupancies.Add(new FlightOccupancyDto
                 {
                     FlightId = f.Id,
-                    FlightNumber = f.FlightNumber,
-                    Route = $"{f.OriginIata} ✈ {f.DestinationIata}",
-                    ScheduledDeparture = f.ScheduledDeparture.ToString("dd/MM/yyyy HH:mm"),
-                    Status = f.Status,
+                    FlightNumber = f.NumeroVuelo,
+                    Route = $"{f.OrigenIata} ✈ {f.DestinoIata}",
+                    ScheduledDeparture = f.SalidaProgramada.ToString("dd/MM/yyyy HH:mm"),
+                    Status = f.Estado,
                     TotalSeats = totalSeats,
                     BookedSeats = bookedSeats,
                     AvailableSeats = totalSeats - bookedSeats,
@@ -117,7 +117,7 @@ namespace Aerocache.Business.Services
             var recentBookingDetails = new List<BookingDetail>();
             foreach (var b in bookings.Take(15))
             {
-                recentBookingDetails.Add(await _bookingService.GetBookingDetailAsync(b.BookingId.ToString()));
+                recentBookingDetails.Add(await _bookingService.GetBookingDetailAsync(b.ReservaId.ToString()));
             }
 
             return new AdminDashboardStatsDto
@@ -127,7 +127,7 @@ namespace Aerocache.Business.Services
                 CancelledBookings = cancelled,
                 TotalPassengers = totalPassengers,
                 TotalRevenue = totalRevenue,
-                TotalFlightsToday = flights.Count(f => f.ScheduledDeparture.Date == DateTime.UtcNow.Date),
+                TotalFlightsToday = flights.Count(f => f.SalidaProgramada.Date == DateTime.UtcNow.Date),
                 RouteStats = routeStats,
                 FlightOccupancies = flightOccupancies,
                 RecentBookings = recentBookingDetails
@@ -136,7 +136,7 @@ namespace Aerocache.Business.Services
 
         public async Task<FlightStatusDto> UpdateFlightStatusAsync(string flightNumber, UpdateFlightStatusRequest request)
         {
-            var flights = await _uow.Flights.FindAsync(f => f.FlightNumber == flightNumber);
+            var flights = await _uow.Vuelos.FindAsync(f => f.NumeroVuelo == flightNumber);
             var flight = flights.FirstOrDefault();
 
             if (flight == null)
@@ -144,66 +144,66 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(404, "FLIGHT_STATUS_NOT_AVAILABLE", "Vuelo no encontrado para actualizar estado");
             }
 
-            flight.Status = request.Status.ToUpperInvariant();
-            if (flight.Status == "DEPARTED")
-                flight.ActualDeparture = DateTime.UtcNow;
-            else if (flight.Status == "ARRIVED")
-                flight.ActualArrival = DateTime.UtcNow;
+            flight.Estado = request.Status.ToUpperInvariant();
+            if (flight.Estado == "DEPARTED")
+                flight.SalidaReal = DateTime.UtcNow;
+            else if (flight.Estado == "ARRIVED")
+                flight.LlegadaReal = DateTime.UtcNow;
 
             await _uow.CompleteAsync();
 
             return new FlightStatusDto
             {
-                FlightNumber = flight.FlightNumber,
+                FlightNumber = flight.NumeroVuelo,
                 Date = DateTime.UtcNow.ToString("yyyy-MM-dd"),
-                MarketingCarrier = flight.MarketingCarrier,
-                OperatingCarrier = flight.OperatingCarrier,
-                Aircraft = flight.Aircraft,
-                Status = flight.Status,
+                MarketingCarrier = flight.AerolineaComercial,
+                OperatingCarrier = flight.AerolineaOperadora,
+                Aircraft = flight.Aeronave,
+                Status = flight.Estado,
                 Departure = new FlightStatusEndpoint
                 {
-                    IataCode = flight.OriginIata,
-                    Terminal = flight.TerminalDeparture,
-                    ScheduledAt = flight.ScheduledDeparture.ToString("o"),
-                    ActualAt = flight.ActualDeparture?.ToString("o")
+                    IataCode = flight.OrigenIata,
+                    Terminal = flight.TerminalSalida,
+                    ScheduledAt = flight.SalidaProgramada.ToString("o"),
+                    ActualAt = flight.SalidaReal?.ToString("o")
                 },
                 Arrival = new FlightStatusEndpoint
                 {
-                    IataCode = flight.DestinationIata,
-                    Terminal = flight.TerminalArrival,
-                    ScheduledAt = flight.ScheduledArrival.ToString("o"),
-                    ActualAt = flight.ActualArrival?.ToString("o")
+                    IataCode = flight.DestinoIata,
+                    Terminal = flight.TerminalLlegada,
+                    ScheduledAt = flight.LlegadaProgramada.ToString("o"),
+                    ActualAt = flight.LlegadaReal?.ToString("o")
                 }
             };
         }
 
         public async Task<List<PassengerItem>> GetFlightPassengersAsync(string flightNumber)
         {
-            var bookings = await _uow.Bookings.Query()
-                .Include(b => b.Passengers)
-                .Where(b => b.FlightId != null && b.FlightId.StartsWith(flightNumber) && b.Status == "CONFIRMED")
+            var bookings = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
+                .Where(b => b.VueloId != null && b.VueloId.StartsWith(flightNumber) && b.Estado == "CONFIRMED")
                 .ToListAsync();
 
             var passengers = new List<PassengerItem>();
             foreach (var b in bookings)
             {
-                foreach (var p in b.Passengers)
+                foreach (var p in b.Pasajeros)
                 {
                     passengers.Add(new PassengerItem
                     {
                         PassengerId = p.Id,
-                        PassengerType = p.PassengerType,
-                        FirstName = p.FirstName,
-                        LastName = p.LastName,
-                        DocumentType = p.DocumentType,
-                        DocumentNumber = p.DocumentNumber,
-                        Nationality = p.Nationality,
-                        BirthDate = p.BirthDate,
-                        Gender = p.Gender,
-                        Contact = new ContactInfo { Email = p.Email, Phone = p.Phone },
+                        PassengerType = p.TipoPasajero,
+                        FirstName = p.Nombre,
+                        LastName = p.Apellido,
+                        DocumentType = p.TipoDocumento,
+                        DocumentNumber = p.NumeroDocumento,
+                        Nationality = p.Nacionalidad,
+                        BirthDate = p.FechaNacimiento,
+                        Gender = p.Genero,
+                        Contact = new ContactInfo { Email = p.Correo, Phone = p.Telefono },
                         AssignedSeats = new List<AssignedSeatDto>
                         {
-                            new() { SegmentId = "SEG-1", SeatNumber = p.AssignedSeatNumber ?? "12A" }
+                            new() { SegmentId = "SEG-1", SeatNumber = p.NumeroAsientoAsignado ?? "12A" }
                         }
                     });
                 }

@@ -12,32 +12,32 @@ namespace Aerocache.DataManagement.Repositories
         public UnitOfWork(AerocacheDbContext context)
         {
             _context = context;
-            Flights = new GenericRepository<Flight>(_context);
-            CabinFares = new GenericRepository<CabinFare>(_context);
-            Seats = new GenericRepository<Seat>(_context);
-            Holds = new GenericRepository<HoldRecord>(_context);
-            Bookings = new GenericRepository<Booking>(_context);
-            Passengers = new GenericRepository<Passenger>(_context);
-            Tickets = new GenericRepository<Ticket>(_context);
-            BoardingPasses = new GenericRepository<BoardingPass>(_context);
-            CancellationQuotes = new GenericRepository<CancellationQuoteRecord>(_context);
-            DateChangeOffers = new GenericRepository<DateChangeOfferRecord>(_context);
-            WebhookSubscriptions = new GenericRepository<WebhookSubscriptionRecord>(_context);
-            IdempotencyRecords = new GenericRepository<IdempotencyRecord>(_context);
+            Vuelos = new GenericRepository<Vuelo>(_context);
+            TarifasCabina = new GenericRepository<TarifaCabina>(_context);
+            Asientos = new GenericRepository<Asiento>(_context);
+            BloqueosTemporales = new GenericRepository<BloqueoTemporal>(_context);
+            Reservas = new GenericRepository<Reserva>(_context);
+            Pasajeros = new GenericRepository<Pasajero>(_context);
+            Boletos = new GenericRepository<Boleto>(_context);
+            PasesAbordar = new GenericRepository<PaseAbordar>(_context);
+            CotizacionesCancelacion = new GenericRepository<CotizacionCancelacion>(_context);
+            OfertasCambioFecha = new GenericRepository<OfertaCambioFecha>(_context);
+            SuscripcionesWebhooks = new GenericRepository<SuscripcionWebhook>(_context);
+            RegistrosIdempotencia = new GenericRepository<RegistroIdempotencia>(_context);
         }
 
-        public IGenericRepository<Flight> Flights { get; }
-        public IGenericRepository<CabinFare> CabinFares { get; }
-        public IGenericRepository<Seat> Seats { get; }
-        public IGenericRepository<HoldRecord> Holds { get; }
-        public IGenericRepository<Booking> Bookings { get; }
-        public IGenericRepository<Passenger> Passengers { get; }
-        public IGenericRepository<Ticket> Tickets { get; }
-        public IGenericRepository<BoardingPass> BoardingPasses { get; }
-        public IGenericRepository<CancellationQuoteRecord> CancellationQuotes { get; }
-        public IGenericRepository<DateChangeOfferRecord> DateChangeOffers { get; }
-        public IGenericRepository<WebhookSubscriptionRecord> WebhookSubscriptions { get; }
-        public IGenericRepository<IdempotencyRecord> IdempotencyRecords { get; }
+        public IGenericRepository<Vuelo> Vuelos { get; }
+        public IGenericRepository<TarifaCabina> TarifasCabina { get; }
+        public IGenericRepository<Asiento> Asientos { get; }
+        public IGenericRepository<BloqueoTemporal> BloqueosTemporales { get; }
+        public IGenericRepository<Reserva> Reservas { get; }
+        public IGenericRepository<Pasajero> Pasajeros { get; }
+        public IGenericRepository<Boleto> Boletos { get; }
+        public IGenericRepository<PaseAbordar> PasesAbordar { get; }
+        public IGenericRepository<CotizacionCancelacion> CotizacionesCancelacion { get; }
+        public IGenericRepository<OfertaCambioFecha> OfertasCambioFecha { get; }
+        public IGenericRepository<SuscripcionWebhook> SuscripcionesWebhooks { get; }
+        public IGenericRepository<RegistroIdempotencia> RegistrosIdempotencia { get; }
 
         public async Task<int> CompleteAsync() => await _context.SaveChangesAsync();
 

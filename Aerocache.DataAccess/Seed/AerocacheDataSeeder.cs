@@ -10,13 +10,13 @@ namespace Aerocache.DataAccess.Seed
     {
         public static void SeedData(AerocacheDbContext context)
         {
-            if (context.Flights.Any())
+            if (context.Vuelos.Any())
                 return;
 
-            var flights = new List<Flight>();
+            var flights = new List<Vuelo>();
             var today = DateTime.UtcNow.Date;
 
-            // Domestic routes for Ecuador: UIO, GYE, CUE
+            // Rutas nacionales en Ecuador: UIO, GYE, CUE
             var routes = new[]
             {
                 // Quito <-> Guayaquil
@@ -57,90 +57,90 @@ namespace Aerocache.DataAccess.Seed
                     var arrTime = depTime.AddMinutes(r.Duration);
                     var flightId = $"{r.Number}-{flightDate:yyyyMMdd}";
 
-                    var flight = new Flight
+                    var flight = new Vuelo
                     {
                         Id = flightId,
-                        FlightNumber = r.Number,
-                        MarketingCarrier = "AC",
-                        OperatingCarrier = "AC",
-                        AirlineName = "AEROCACHE",
-                        Aircraft = "Airbus A320",
-                        OriginIata = r.Origin,
-                        DestinationIata = r.Dest,
-                        ScheduledDeparture = depTime,
-                        ScheduledArrival = arrTime,
-                        DurationMinutes = r.Duration,
-                        TerminalDeparture = "T1",
-                        TerminalArrival = "T1",
-                        Status = dayOffset == 0 ? r.Status : (dayOffset < 0 ? "ARRIVED" : "SCHEDULED")
+                        NumeroVuelo = r.Number,
+                        AerolineaComercial = "AC",
+                        AerolineaOperadora = "AC",
+                        NombreAerolinea = "AEROCACHE",
+                        Aeronave = "Airbus A320",
+                        OrigenIata = r.Origin,
+                        DestinoIata = r.Dest,
+                        SalidaProgramada = depTime,
+                        LlegadaProgramada = arrTime,
+                        DuracionMinutos = r.Duration,
+                        TerminalSalida = "T1",
+                        TerminalLlegada = "T1",
+                        Estado = dayOffset == 0 ? r.Status : (dayOffset < 0 ? "ARRIVED" : "SCHEDULED")
                     };
 
                     decimal basePrice = (r.Origin == "GYE" && r.Dest == "CUE") || (r.Origin == "CUE" && r.Dest == "GYE") ? 39.00m : 49.00m;
                     decimal taxes = Math.Round(basePrice * 0.15m, 2);
 
-                    flight.CabinFares.Add(new CabinFare
+                    flight.TarifasCabina.Add(new TarifaCabina
                     {
-                        FlightId = flightId,
-                        CabinClass = "ECONOMY",
-                        FareBrand = "Light",
-                        AvailableSeats = 28,
-                        BaseFare = basePrice,
-                        Taxes = taxes,
-                        TotalPrice = basePrice + taxes,
-                        Currency = "USD",
-                        IsRefundable = false,
-                        IsChangeable = true,
-                        PersonalItemIncluded = true,
-                        CarryOnIncluded = 0,
-                        CheckedBaggageIncluded = 0,
-                        ExtraBaggagePrice = 20.00m
+                        VueloId = flightId,
+                        ClaseCabina = "ECONOMY",
+                        MarcaTarifa = "Light",
+                        AsientosDisponibles = 28,
+                        TarifaBase = basePrice,
+                        Impuestos = taxes,
+                        PrecioTotal = basePrice + taxes,
+                        Moneda = "USD",
+                        EsReembolsable = false,
+                        PermiteCambios = true,
+                        ArticuloPersonalIncluido = true,
+                        EquipajeManoIncluido = 0,
+                        EquipajeBodegaIncluido = 0,
+                        PrecioEquipajeAdicional = 20.00m
                     });
 
                     decimal plusBase = basePrice + 25.00m;
                     decimal plusTaxes = Math.Round(plusBase * 0.15m, 2);
-                    flight.CabinFares.Add(new CabinFare
+                    flight.TarifasCabina.Add(new TarifaCabina
                     {
-                        FlightId = flightId,
-                        CabinClass = "ECONOMY",
-                        FareBrand = "Plus",
-                        AvailableSeats = 22,
-                        BaseFare = plusBase,
-                        Taxes = plusTaxes,
-                        TotalPrice = plusBase + plusTaxes,
-                        Currency = "USD",
-                        IsRefundable = false,
-                        IsChangeable = true,
-                        PersonalItemIncluded = true,
-                        CarryOnIncluded = 1,
-                        CheckedBaggageIncluded = 1,
-                        ExtraBaggagePrice = 18.00m
+                        VueloId = flightId,
+                        ClaseCabina = "ECONOMY",
+                        MarcaTarifa = "Plus",
+                        AsientosDisponibles = 22,
+                        TarifaBase = plusBase,
+                        Impuestos = plusTaxes,
+                        PrecioTotal = plusBase + plusTaxes,
+                        Moneda = "USD",
+                        EsReembolsable = false,
+                        PermiteCambios = true,
+                        ArticuloPersonalIncluido = true,
+                        EquipajeManoIncluido = 1,
+                        EquipajeBodegaIncluido = 1,
+                        PrecioEquipajeAdicional = 18.00m
                     });
 
                     decimal topBase = basePrice + 55.00m;
                     decimal topTaxes = Math.Round(topBase * 0.15m, 2);
-                    flight.CabinFares.Add(new CabinFare
+                    flight.TarifasCabina.Add(new TarifaCabina
                     {
-                        FlightId = flightId,
-                        CabinClass = "PREMIUM_ECONOMY",
-                        FareBrand = "Top",
-                        AvailableSeats = 12,
-                        BaseFare = topBase,
-                        Taxes = topTaxes,
-                        TotalPrice = topBase + topTaxes,
-                        Currency = "USD",
-                        IsRefundable = true,
-                        IsChangeable = true,
-                        PersonalItemIncluded = true,
-                        CarryOnIncluded = 1,
-                        CheckedBaggageIncluded = 2,
-                        ExtraBaggagePrice = 15.00m
+                        VueloId = flightId,
+                        ClaseCabina = "PREMIUM_ECONOMY",
+                        MarcaTarifa = "Top",
+                        AsientosDisponibles = 12,
+                        TarifaBase = topBase,
+                        Impuestos = topTaxes,
+                        PrecioTotal = topBase + topTaxes,
+                        Moneda = "USD",
+                        EsReembolsable = true,
+                        PermiteCambios = true,
+                        ArticuloPersonalIncluido = true,
+                        EquipajeManoIncluido = 1,
+                        EquipajeBodegaIncluido = 2,
+                        PrecioEquipajeAdicional = 15.00m
                     });
 
                     flights.Add(flight);
                 }
             }
 
-            context.Flights.AddRange(flights);
+            context.Vuelos.AddRange(flights);
             context.SaveChanges();
         }
     }

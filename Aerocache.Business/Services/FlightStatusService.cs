@@ -20,8 +20,8 @@ namespace Aerocache.Business.Services
 
         public async Task<FlightStatusDto> GetFlightStatusAsync(string flightNumber, string date)
         {
-            var flight = await _uow.Flights.Query()
-                .FirstOrDefaultAsync(f => f.FlightNumber == flightNumber);
+            var flight = await _uow.Vuelos.Query()
+                .FirstOrDefaultAsync(f => f.NumeroVuelo == flightNumber);
 
             if (flight == null)
             {
@@ -34,27 +34,27 @@ namespace Aerocache.Business.Services
 
             return new FlightStatusDto
             {
-                FlightNumber = flight.FlightNumber,
+                FlightNumber = flight.NumeroVuelo,
                 Date = queryDate.ToString("yyyy-MM-dd"),
-                MarketingCarrier = flight.MarketingCarrier,
-                OperatingCarrier = flight.OperatingCarrier,
-                Aircraft = flight.Aircraft,
-                Status = flight.Status,
+                MarketingCarrier = flight.AerolineaComercial,
+                OperatingCarrier = flight.AerolineaOperadora,
+                Aircraft = flight.Aeronave,
+                Status = flight.Estado,
                 Departure = new FlightStatusEndpoint
                 {
-                    IataCode = flight.OriginIata,
-                    Terminal = flight.TerminalDeparture,
-                    ScheduledAt = flight.ScheduledDeparture.ToString("o"),
-                    EstimatedAt = flight.EstimatedDeparture?.ToString("o"),
-                    ActualAt = flight.ActualDeparture?.ToString("o")
+                    IataCode = flight.OrigenIata,
+                    Terminal = flight.TerminalSalida,
+                    ScheduledAt = flight.SalidaProgramada.ToString("o"),
+                    EstimatedAt = flight.SalidaEstimada?.ToString("o"),
+                    ActualAt = flight.SalidaReal?.ToString("o")
                 },
                 Arrival = new FlightStatusEndpoint
                 {
-                    IataCode = flight.DestinationIata,
-                    Terminal = flight.TerminalArrival,
-                    ScheduledAt = flight.ScheduledArrival.ToString("o"),
-                    EstimatedAt = flight.EstimatedArrival?.ToString("o"),
-                    ActualAt = flight.ActualArrival?.ToString("o")
+                    IataCode = flight.DestinoIata,
+                    Terminal = flight.TerminalLlegada,
+                    ScheduledAt = flight.LlegadaProgramada.ToString("o"),
+                    EstimatedAt = flight.LlegadaEstimada?.ToString("o"),
+                    ActualAt = flight.LlegadaReal?.ToString("o")
                 }
             };
         }

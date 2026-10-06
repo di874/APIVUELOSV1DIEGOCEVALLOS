@@ -28,18 +28,18 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "HoldId inválido");
             }
 
-            var hold = await _uow.Holds.GetByIdAsync(holdId);
+            var hold = await _uow.BloqueosTemporales.GetByIdAsync(holdId);
             if (hold == null)
             {
                 throw new AerocacheProblemException(404, "OFFER_NO_LONGER_AVAILABLE", "Hold no encontrado");
             }
 
-            if (hold.Status == "EXPIRED" || hold.ExpiresAt < DateTime.UtcNow)
+            if (hold.Estado == "EXPIRED" || hold.FechaExpiracion < DateTime.UtcNow)
             {
                 throw new AerocacheProblemException(410, "QUOTE_EXPIRED", "El tiempo de bloqueo de tarifa (Hold) ha expirado.");
             }
 
-            if (hold.Status == "CONSUMED")
+            if (hold.Estado == "CONSUMED")
             {
                 throw new AerocacheProblemException(409, "ALREADY_CANCELLED", "Este Hold ya ha sido utilizado para otra reserva.");
             }
@@ -49,7 +49,7 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(400, "PAYMENT_REFERENCE_INVALID", "Referencia de pago inválida o no provista");
             }
 
-            var flight = await _uow.Flights.GetByIdAsync(hold.FlightId);
+            var flight = await _uow.Vuelos.GetByIdAsync(hold.VueloId);
             if (flight == null)
             {
                 throw new AerocacheProblemException(404, "OFFER_NO_LONGER_AVAILABLE", "Vuelo asociado no encontrado");
@@ -58,29 +58,29 @@ namespace Aerocache.Business.Services
             // Generate realistic 6-character PNR (Latin American airline standard)
             string pnr = "AC" + new Random().Next(1000, 9999).ToString() + "X";
 
-            var booking = new Booking
+            var booking = new Reserva
             {
-                BookingId = Guid.NewGuid(),
+                ReservaId = Guid.NewGuid(),
                 Pnr = pnr,
-                Status = "CONFIRMED",
-                GrandTotalBase = hold.LockedBaseFare,
-                GrandTotalTaxes = hold.LockedTaxes,
-                GrandTotalAmount = hold.LockedTotal,
-                Currency = hold.Currency,
-                CreatedAt = DateTime.UtcNow,
-                PaymentReference = request.Payment.PaymentReferenceValue,
-                FlightId = flight.Id,
-                ItineraryId = hold.ItineraryId,
-                CabinClass = hold.CabinClass,
-                FareBrand = hold.FareBrand,
-                OriginIata = flight.OriginIata,
-                DestinationIata = flight.DestinationIata,
-                DepartureDate = flight.ScheduledDeparture
+                Estado = "CONFIRMED",
+                TotalBaseGeneral = hold.TarifaBaseBloqueada,
+                TotalImpuestosGeneral = hold.ImpuestosBloqueados,
+                MontoTotalGeneral = hold.TotalBloqueado,
+                Moneda = hold.Moneda,
+                FechaCreacion = DateTime.UtcNow,
+                ReferenciaPago = request.Payment.PaymentReferenceValue,
+                VueloId = flight.Id,
+                ItinerarioId = hold.ItinerarioId,
+                ClaseCabina = hold.ClaseCabina,
+                MarcaTarifa = hold.MarcaTarifa,
+                OrigenIata = flight.OrigenIata,
+                DestinoIata = flight.DestinoIata,
+                FechaSalida = flight.SalidaProgramada
             };
 
-            var occupiedSeats = await _uow.Bookings.Query()
-                .Where(b => b.FlightId == flight.Id && (b.Status == "CONFIRMED" || b.Status == "CHECKED_IN"))
-                .SelectMany(b => b.Passengers.Select(pax => pax.AssignedSeatNumber))
+            var occupiedSeats = await _uow.Reservas.Query()
+                .Where(b => b.VueloId == flight.Id && (b.Estado == "CONFIRMED" || b.Estado == "CHECKED_IN"))
+                .SelectMany(b => b.Pasajeros.Select(pax => pax.NumeroAsientoAsignado))
                 .Where(s => !string.IsNullOrEmpty(s))
                 .ToListAsync();
 
@@ -118,46 +118,46 @@ namespace Aerocache.Business.Services
 
                 occupiedSeatSet.Add(requestedSeat);
 
-                var passenger = new Passenger
+                var passenger = new Pasajero
                 {
-                    BookingId = booking.BookingId,
-                    PassengerType = p.PassengerType ?? "ADULT",
-                    AssociatedAdultId = p.AssociatedAdultId,
-                    FirstName = p.FirstName,
-                    LastName = p.LastName,
-                    DocumentType = p.DocumentType ?? "NATIONAL_ID",
-                    DocumentNumber = p.DocumentNumber,
-                    Nationality = p.Nationality ?? "EC",
-                    DocumentExpiryDate = p.DocumentExpiryDate,
-                    BirthDate = p.BirthDate,
-                    Gender = p.Gender ?? "M",
-                    Email = p.Contact?.Email ?? "",
-                    Phone = p.Contact?.Phone ?? "",
-                    AssignedSeatNumber = requestedSeat,
-                    ExtraBaggageQuantity = p.ExtraBaggage?.Sum(b => b.Quantity) ?? 0
+                    ReservaId = booking.ReservaId,
+                    TipoPasajero = p.PassengerType ?? "ADULT",
+                    AdultoAsociadoId = p.AssociatedAdultId,
+                    Nombre = p.FirstName,
+                    Apellido = p.LastName,
+                    TipoDocumento = p.DocumentType ?? "NATIONAL_ID",
+                    NumeroDocumento = p.DocumentNumber,
+                    Nacionalidad = p.Nationality ?? "EC",
+                    FechaCaducidadDocumento = p.DocumentExpiryDate,
+                    FechaNacimiento = p.BirthDate,
+                    Genero = p.Gender ?? "M",
+                    Correo = p.Contact?.Email ?? "",
+                    Telefono = p.Contact?.Phone ?? "",
+                    NumeroAsientoAsignado = requestedSeat,
+                    CantidadEquipajeExtra = p.ExtraBaggage?.Sum(b => b.Quantity) ?? 0
                 };
-                booking.Passengers.Add(passenger);
+                booking.Pasajeros.Add(passenger);
 
                 // Create e-ticket immediately
-                var ticket = new Ticket
+                var ticket = new Boleto
                 {
-                    BookingId = booking.BookingId,
-                    PassengerId = passenger.Id,
-                    ETicketNumber = "045-" + new Random().Next(100000000, 999999999).ToString(),
-                    Status = "ISSUED",
-                    IssuedAt = DateTime.UtcNow,
-                    SegmentId = $"SEG-{flight.Id}",
-                    CouponNumber = "CP-1"
+                    ReservaId = booking.ReservaId,
+                    PasajeroId = passenger.Id,
+                    NumeroBoletoElectronico = "045-" + new Random().Next(100000000, 999999999).ToString(),
+                    Estado = "ISSUED",
+                    FechaEmision = DateTime.UtcNow,
+                    SegmentoId = $"SEG-{flight.Id}",
+                    NumeroCupon = "CP-1"
                 };
-                booking.Tickets.Add(ticket);
+                booking.Boletos.Add(ticket);
             }
 
-            hold.Status = "CONSUMED";
+            hold.Estado = "CONSUMED";
 
-            await _uow.Bookings.AddAsync(booking);
+            await _uow.Reservas.AddAsync(booking);
             await _uow.CompleteAsync();
 
-            return await GetBookingDetailAsync(booking.BookingId.ToString());
+            return await GetBookingDetailAsync(booking.ReservaId.ToString());
         }
 
         public async Task<BookingDetail> GetBookingDetailAsync(string bookingId)
@@ -167,128 +167,128 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
             }
 
-            var booking = await _uow.Bookings.Query()
-                .Include(b => b.Passengers)
-                .Include(b => b.Tickets)
-                .FirstOrDefaultAsync(b => b.BookingId == id);
+            var booking = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
+                .Include(b => b.Boletos)
+                .FirstOrDefaultAsync(b => b.ReservaId == id);
 
             if (booking == null)
             {
                 throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
             }
 
-            var flight = await _uow.Flights.GetByIdAsync(booking.FlightId ?? "");
+            var flight = await _uow.Vuelos.GetByIdAsync(booking.VueloId ?? "");
 
             var segment = new FlightSegmentDto
             {
                 SegmentId = $"SEG-{flight?.Id ?? "0"}",
-                FlightNumber = flight?.FlightNumber ?? "AC1401",
+                FlightNumber = flight?.NumeroVuelo ?? "AC1401",
                 MarketingCarrier = "AC",
                 OperatingCarrier = "AC",
-                Aircraft = flight?.Aircraft ?? "Airbus A320",
-                DurationMinutes = flight?.DurationMinutes ?? 50,
-                Status = flight?.Status ?? "SCHEDULED",
+                Aircraft = flight?.Aeronave ?? "Airbus A320",
+                DurationMinutes = flight?.DuracionMinutos ?? 50,
+                Status = flight?.Estado ?? "SCHEDULED",
                 Departure = new FlightEndpoint
                 {
-                    IataCode = booking.OriginIata,
-                    At = booking.DepartureDate.ToString("o"),
+                    IataCode = booking.OrigenIata,
+                    At = booking.FechaSalida.ToString("o"),
                     Terminal = "T1"
                 },
                 Arrival = new FlightEndpoint
                 {
-                    IataCode = booking.DestinationIata,
-                    At = booking.DepartureDate.AddMinutes(flight?.DurationMinutes ?? 50).ToString("o"),
+                    IataCode = booking.DestinoIata,
+                    At = booking.FechaSalida.AddMinutes(flight?.DuracionMinutos ?? 50).ToString("o"),
                     Terminal = "T1"
                 }
             };
 
             return new BookingDetail
             {
-                BookingId = booking.BookingId.ToString(),
+                BookingId = booking.ReservaId.ToString(),
                 Pnr = booking.Pnr,
-                Status = booking.Status,
-                CreatedAt = booking.CreatedAt.ToString("o"),
-                UpdatedAt = booking.UpdatedAt?.ToString("o"),
+                Status = booking.Estado,
+                CreatedAt = booking.FechaCreacion.ToString("o"),
+                UpdatedAt = booking.FechaActualizacion?.ToString("o"),
                 GrandTotal = new MoneyAmount
                 {
-                    Currency = booking.Currency,
-                    BaseFare = booking.GrandTotalBase.ToString("F2", CultureInfo.InvariantCulture),
-                    Taxes = booking.GrandTotalTaxes.ToString("F2", CultureInfo.InvariantCulture),
-                    Total = booking.GrandTotalAmount.ToString("F2", CultureInfo.InvariantCulture)
+                    Currency = booking.Moneda,
+                    BaseFare = booking.TotalBaseGeneral.ToString("F2", CultureInfo.InvariantCulture),
+                    Taxes = booking.TotalImpuestosGeneral.ToString("F2", CultureInfo.InvariantCulture),
+                    Total = booking.MontoTotalGeneral.ToString("F2", CultureInfo.InvariantCulture)
                 },
                 Itineraries = new List<ItineraryOptionDto>
                 {
                     new()
                     {
-                        ItineraryId = booking.ItineraryId ?? "ITIN-1",
-                        TotalDurationMinutes = flight?.DurationMinutes ?? 50,
+                        ItineraryId = booking.ItinerarioId ?? "ITIN-1",
+                        TotalDurationMinutes = flight?.DuracionMinutos ?? 50,
                         StopsCount = 0,
                         Segments = new List<FlightSegmentDto> { segment }
                     }
                 },
-                Passengers = booking.Passengers.Select(p => new PassengerItem
+                Passengers = booking.Pasajeros.Select(p => new PassengerItem
                 {
                     PassengerId = p.Id,
-                    PassengerType = p.PassengerType,
-                    FirstName = p.FirstName,
-                    LastName = p.LastName,
-                    DocumentType = p.DocumentType,
-                    DocumentNumber = p.DocumentNumber,
-                    Nationality = p.Nationality,
-                    BirthDate = p.BirthDate,
-                    Gender = p.Gender,
-                    Contact = new ContactInfo { Email = p.Email, Phone = p.Phone },
+                    PassengerType = p.TipoPasajero,
+                    FirstName = p.Nombre,
+                    LastName = p.Apellido,
+                    DocumentType = p.TipoDocumento,
+                    DocumentNumber = p.NumeroDocumento,
+                    Nationality = p.Nacionalidad,
+                    BirthDate = p.FechaNacimiento,
+                    Gender = p.Genero,
+                    Contact = new ContactInfo { Email = p.Correo, Phone = p.Telefono },
                     AssignedSeats = new List<AssignedSeatDto>
                     {
-                        new() { SegmentId = $"SEG-{flight?.Id ?? "0"}", SeatNumber = p.AssignedSeatNumber ?? "12A" }
+                        new() { SegmentId = $"SEG-{flight?.Id ?? "0"}", SeatNumber = p.NumeroAsientoAsignado ?? "12A" }
                     }
                 }).ToList(),
-                Tickets = booking.Tickets.Select(t => new TicketDto
+                Tickets = booking.Boletos.Select(t => new TicketDto
                 {
-                    TicketId = t.TicketId,
-                    BookingId = t.BookingId.ToString(),
-                    PassengerId = t.PassengerId,
-                    ETicketNumber = t.ETicketNumber,
-                    Status = t.Status,
-                    IssuedAt = t.IssuedAt.ToString("o"),
+                    TicketId = t.BoletoId,
+                    BookingId = t.ReservaId.ToString(),
+                    PassengerId = t.PasajeroId,
+                    ETicketNumber = t.NumeroBoletoElectronico,
+                    Status = t.Estado,
+                    IssuedAt = t.FechaEmision.ToString("o"),
                     Segments = new List<TicketSegmentDto>
                     {
-                        new() { SegmentId = t.SegmentId, Status = t.Status, CouponNumber = t.CouponNumber }
+                        new() { SegmentId = t.SegmentoId, Status = t.Estado, CouponNumber = t.NumeroCupon }
                     }
                 }).ToList(),
-                Changes = string.IsNullOrWhiteSpace(booking.ChangesHistoryJson)
+                Changes = string.IsNullOrWhiteSpace(booking.HistorialCambiosJson)
                     ? new List<ChangeHistoryItem>()
-                    : new List<ChangeHistoryItem> { new() { ChangedAt = booking.UpdatedAt?.ToString("o"), Description = booking.ChangesHistoryJson } }
+                    : new List<ChangeHistoryItem> { new() { ChangedAt = booking.FechaActualizacion?.ToString("o"), Description = booking.HistorialCambiosJson } }
             };
         }
 
         public async Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor)
         {
-            var query = _uow.Bookings.Query().AsQueryable();
+            var query = _uow.Reservas.Query().AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(pnr))
                 query = query.Where(b => b.Pnr == pnr);
 
             if (!string.IsNullOrWhiteSpace(status))
-                query = query.Where(b => b.Status == status);
+                query = query.Where(b => b.Estado == status);
 
-            var list = await query.OrderByDescending(b => b.CreatedAt).Take(Math.Min(limit, 50)).ToListAsync();
+            var list = await query.OrderByDescending(b => b.FechaCreacion).Take(Math.Min(limit, 50)).ToListAsync();
 
             return new BookingListResponse
             {
                 NextCursor = null,
                 Items = list.Select(b => new BookingSummaryItem
                 {
-                    BookingId = b.BookingId.ToString(),
+                    BookingId = b.ReservaId.ToString(),
                     Pnr = b.Pnr,
-                    Status = b.Status,
-                    Origin = b.OriginIata,
-                    Destination = b.DestinationIata,
-                    DepartureDate = b.DepartureDate.ToString("yyyy-MM-dd"),
+                    Status = b.Estado,
+                    Origin = b.OrigenIata,
+                    Destination = b.DestinoIata,
+                    DepartureDate = b.FechaSalida.ToString("yyyy-MM-dd"),
                     GrandTotal = new MoneyAmount
                     {
-                        Currency = b.Currency,
-                        Total = b.GrandTotalAmount.ToString("F2", CultureInfo.InvariantCulture)
+                        Currency = b.Moneda,
+                        Total = b.MontoTotalGeneral.ToString("F2", CultureInfo.InvariantCulture)
                     }
                 }).ToList()
             };
@@ -301,21 +301,21 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
             }
 
-            var tickets = await _uow.Tickets.FindAsync(t => t.BookingId == id);
+            var tickets = await _uow.Boletos.FindAsync(t => t.ReservaId == id);
             return new TicketListResponse
             {
                 BookingId = bookingId,
                 Tickets = tickets.Select(t => new TicketDto
                 {
-                    TicketId = t.TicketId,
-                    BookingId = t.BookingId.ToString(),
-                    PassengerId = t.PassengerId,
-                    ETicketNumber = t.ETicketNumber,
-                    Status = t.Status,
-                    IssuedAt = t.IssuedAt.ToString("o"),
+                    TicketId = t.BoletoId,
+                    BookingId = t.ReservaId.ToString(),
+                    PassengerId = t.PasajeroId,
+                    ETicketNumber = t.NumeroBoletoElectronico,
+                    Status = t.Estado,
+                    IssuedAt = t.FechaEmision.ToString("o"),
                     Segments = new List<TicketSegmentDto>
                     {
-                        new() { SegmentId = t.SegmentId, Status = t.Status, CouponNumber = t.CouponNumber }
+                        new() { SegmentId = t.SegmentoId, Status = t.Estado, CouponNumber = t.NumeroCupon }
                     }
                 }).ToList()
             };
@@ -323,7 +323,7 @@ namespace Aerocache.Business.Services
 
         public async Task<TicketDto> GetTicketAsync(string bookingId, string ticketId)
         {
-            var ticket = await _uow.Tickets.FirstOrDefaultAsync(t => t.TicketId == ticketId);
+            var ticket = await _uow.Boletos.FirstOrDefaultAsync(t => t.BoletoId == ticketId);
             if (ticket == null)
             {
                 throw new AerocacheProblemException(404, "TICKET_ISSUANCE_FAILED", "Ticket no encontrado");
@@ -331,15 +331,15 @@ namespace Aerocache.Business.Services
 
             return new TicketDto
             {
-                TicketId = ticket.TicketId,
-                BookingId = ticket.BookingId.ToString(),
-                PassengerId = ticket.PassengerId,
-                ETicketNumber = ticket.ETicketNumber,
-                Status = ticket.Status,
-                IssuedAt = ticket.IssuedAt.ToString("o"),
+                TicketId = ticket.BoletoId,
+                BookingId = ticket.ReservaId.ToString(),
+                PassengerId = ticket.PasajeroId,
+                ETicketNumber = ticket.NumeroBoletoElectronico,
+                Status = ticket.Estado,
+                IssuedAt = ticket.FechaEmision.ToString("o"),
                 Segments = new List<TicketSegmentDto>
                 {
-                    new() { SegmentId = ticket.SegmentId, Status = ticket.Status, CouponNumber = ticket.CouponNumber }
+                    new() { SegmentId = ticket.SegmentoId, Status = ticket.Estado, CouponNumber = ticket.NumeroCupon }
                 }
             };
         }

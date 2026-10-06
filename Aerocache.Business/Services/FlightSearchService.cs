@@ -50,13 +50,13 @@ namespace Aerocache.Business.Services
                 searchDate = DateTime.UtcNow.Date;
             }
 
-            var query = _uow.Flights.Query()
-                .Include(f => f.CabinFares)
-                .Where(f => f.OriginIata == origin && f.DestinationIata == dest);
+            var query = _uow.Vuelos.Query()
+                .Include(f => f.TarifasCabina)
+                .Where(f => f.OrigenIata == origin && f.DestinoIata == dest);
 
             var minDate = searchDate.Date;
             var maxDate = searchDate.Date.AddDays(1);
-            var flights = await query.Where(f => f.ScheduledDeparture >= minDate && f.ScheduledDeparture < maxDate).ToListAsync();
+            var flights = await query.Where(f => f.SalidaProgramada >= minDate && f.SalidaProgramada < maxDate).ToListAsync();
 
             if (!flights.Any())
             {
@@ -76,64 +76,64 @@ namespace Aerocache.Business.Services
                 var segment = new FlightSegmentDto
                 {
                     SegmentId = segmentId,
-                    FlightNumber = flight.FlightNumber,
-                    MarketingCarrier = flight.MarketingCarrier,
-                    OperatingCarrier = flight.OperatingCarrier,
-                    Aircraft = flight.Aircraft,
-                    DurationMinutes = flight.DurationMinutes,
-                    Status = flight.Status,
+                    FlightNumber = flight.NumeroVuelo,
+                    MarketingCarrier = flight.AerolineaComercial,
+                    OperatingCarrier = flight.AerolineaOperadora,
+                    Aircraft = flight.Aeronave,
+                    DurationMinutes = flight.DuracionMinutos,
+                    Status = flight.Estado,
                     Departure = new FlightEndpoint
                     {
-                        IataCode = flight.OriginIata,
-                        At = flight.ScheduledDeparture.ToString("o"),
-                        Terminal = flight.TerminalDeparture
+                        IataCode = flight.OrigenIata,
+                        At = flight.SalidaProgramada.ToString("o"),
+                        Terminal = flight.TerminalSalida
                     },
                     Arrival = new FlightEndpoint
                     {
-                        IataCode = flight.DestinationIata,
-                        At = flight.ScheduledArrival.ToString("o"),
-                        Terminal = flight.TerminalArrival
+                        IataCode = flight.DestinoIata,
+                        At = flight.LlegadaProgramada.ToString("o"),
+                        Terminal = flight.TerminalLlegada
                     }
                 };
 
                 var pricingOptions = new List<CabinPricingDto>();
                 decimal lowestTotal = decimal.MaxValue;
 
-                foreach (var fare in flight.CabinFares)
+                foreach (var fare in flight.TarifasCabina)
                 {
-                    decimal passengerTotal = fare.TotalPrice * totalPassengers;
+                    decimal passengerTotal = fare.PrecioTotal * totalPassengers;
                     if (passengerTotal < lowestTotal) lowestTotal = passengerTotal;
 
                     pricingOptions.Add(new CabinPricingDto
                     {
-                        CabinClass = fare.CabinClass,
-                        FareBrand = fare.FareBrand,
-                        AvailableSeats = fare.AvailableSeats,
+                        CabinClass = fare.ClaseCabina,
+                        FareBrand = fare.MarcaTarifa,
+                        AvailableSeats = fare.AsientosDisponibles,
                         FareRules = new FareRulesDto
                         {
-                            IsRefundable = fare.IsRefundable,
-                            IsChangeable = fare.IsChangeable
+                            IsRefundable = fare.EsReembolsable,
+                            IsChangeable = fare.PermiteCambios
                         },
                         BaggageAllowance = new BaggageAllowanceDto
                         {
-                            PersonalItemIncluded = fare.PersonalItemIncluded,
-                            CarryOnIncluded = fare.CarryOnIncluded,
-                            CheckedBaggageIncluded = fare.CheckedBaggageIncluded
+                            PersonalItemIncluded = fare.ArticuloPersonalIncluido,
+                            CarryOnIncluded = fare.EquipajeManoIncluido,
+                            CheckedBaggageIncluded = fare.EquipajeBodegaIncluido
                         },
                         ExtraCheckedBaggagePrice = new MoneyAmount
                         {
-                            Currency = fare.Currency,
-                            Total = fare.ExtraBaggagePrice.ToString("F2", CultureInfo.InvariantCulture)
+                            Currency = fare.Moneda,
+                            Total = fare.PrecioEquipajeAdicional.ToString("F2", CultureInfo.InvariantCulture)
                         },
                         PricePerPassengerType = new List<PassengerPriceDto>
                         {
                             new() {
                                 PassengerType = "ADULT",
                                 Price = new MoneyAmount {
-                                    Currency = fare.Currency,
-                                    BaseFare = fare.BaseFare.ToString("F2", CultureInfo.InvariantCulture),
-                                    Taxes = fare.Taxes.ToString("F2", CultureInfo.InvariantCulture),
-                                    Total = fare.TotalPrice.ToString("F2", CultureInfo.InvariantCulture)
+                                    Currency = fare.Moneda,
+                                    BaseFare = fare.TarifaBase.ToString("F2", CultureInfo.InvariantCulture),
+                                    Taxes = fare.Impuestos.ToString("F2", CultureInfo.InvariantCulture),
+                                    Total = fare.PrecioTotal.ToString("F2", CultureInfo.InvariantCulture)
                                 }
                             }
                         }
@@ -149,7 +149,7 @@ namespace Aerocache.Business.Services
                         new()
                         {
                             ItineraryId = $"ITIN-{flight.Id}",
-                            TotalDurationMinutes = flight.DurationMinutes,
+                            TotalDurationMinutes = flight.DuracionMinutos,
                             StopsCount = 0,
                             Segments = new List<FlightSegmentDto> { segment },
                             PricingOptions = pricingOptions
@@ -186,9 +186,9 @@ namespace Aerocache.Business.Services
 
             if (!string.IsNullOrEmpty(flightId))
             {
-                var bookedSeats = await _uow.Bookings.Query()
-                    .Where(b => b.FlightId == flightId && (b.Status == "CONFIRMED" || b.Status == "CHECKED_IN"))
-                    .SelectMany(b => b.Passengers.Select(p => p.AssignedSeatNumber))
+                var bookedSeats = await _uow.Reservas.Query()
+                    .Where(b => b.VueloId == flightId && (b.Estado == "CONFIRMED" || b.Estado == "CHECKED_IN"))
+                    .SelectMany(b => b.Pasajeros.Select(p => p.NumeroAsientoAsignado))
                     .Where(s => !string.IsNullOrEmpty(s))
                     .ToListAsync();
 

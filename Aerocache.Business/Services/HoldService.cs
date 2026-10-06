@@ -28,8 +28,8 @@ namespace Aerocache.Business.Services
             }
 
             var flightId = request.OfferId.Replace("OFF-", "").Trim();
-            var flight = await _uow.Flights.Query()
-                .Include(f => f.CabinFares)
+            var flight = await _uow.Vuelos.Query()
+                .Include(f => f.TarifasCabina)
                 .FirstOrDefaultAsync(f => f.Id == flightId);
 
             if (flight == null)
@@ -41,50 +41,50 @@ namespace Aerocache.Business.Services
             var cabinClass = selection?.CabinClass ?? "ECONOMY";
             var fareBrand = selection?.FareBrand ?? "Light";
 
-            var fare = flight.CabinFares.FirstOrDefault(c => c.CabinClass == cabinClass && c.FareBrand == fareBrand)
-                       ?? flight.CabinFares.FirstOrDefault()
-                       ?? new CabinFare { BaseFare = 49.00m, Taxes = 7.35m, TotalPrice = 56.35m };
+            var fare = flight.TarifasCabina.FirstOrDefault(c => c.ClaseCabina == cabinClass && c.MarcaTarifa == fareBrand)
+                       ?? flight.TarifasCabina.FirstOrDefault()
+                       ?? new TarifaCabina { TarifaBase = 49.00m, Impuestos = 7.35m, PrecioTotal = 56.35m };
 
             int totalPassengers = (request.PassengersBreakdown?.Adults ?? 1)
                                 + (request.PassengersBreakdown?.Youths ?? 0)
                                 + (request.PassengersBreakdown?.Children ?? 0);
             if (totalPassengers <= 0) totalPassengers = 1;
 
-            decimal totalLocked = fare.TotalPrice * totalPassengers;
-            decimal baseLocked = fare.BaseFare * totalPassengers;
-            decimal taxesLocked = fare.Taxes * totalPassengers;
+            decimal totalLocked = fare.PrecioTotal * totalPassengers;
+            decimal baseLocked = fare.TarifaBase * totalPassengers;
+            decimal taxesLocked = fare.Impuestos * totalPassengers;
 
-            var hold = new HoldRecord
+            var hold = new BloqueoTemporal
             {
-                HoldId = Guid.NewGuid(),
-                OfferId = request.OfferId,
-                FlightId = flight.Id,
-                ItineraryId = selection?.ItineraryId ?? $"ITIN-{flight.Id}",
-                CabinClass = cabinClass,
-                FareBrand = fareBrand,
-                LockedBaseFare = baseLocked,
-                LockedTaxes = taxesLocked,
-                LockedTotal = totalLocked,
-                Currency = "USD",
-                Status = "HELD",
-                CreatedAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(15),
-                TtlMinutes = 15,
-                Adults = request.PassengersBreakdown?.Adults ?? 1,
-                Youths = request.PassengersBreakdown?.Youths ?? 0,
-                Children = request.PassengersBreakdown?.Children ?? 0,
-                Infants = request.PassengersBreakdown?.Infants ?? 0
+                BloqueoId = Guid.NewGuid(),
+                OfertaId = request.OfferId,
+                VueloId = flight.Id,
+                ItinerarioId = selection?.ItineraryId ?? $"ITIN-{flight.Id}",
+                ClaseCabina = cabinClass,
+                MarcaTarifa = fareBrand,
+                TarifaBaseBloqueada = baseLocked,
+                ImpuestosBloqueados = taxesLocked,
+                TotalBloqueado = totalLocked,
+                Moneda = "USD",
+                Estado = "HELD",
+                FechaCreacion = DateTime.UtcNow,
+                FechaExpiracion = DateTime.UtcNow.AddMinutes(15),
+                TiempoVidaMinutos = 15,
+                Adultos = request.PassengersBreakdown?.Adults ?? 1,
+                Jovenes = request.PassengersBreakdown?.Youths ?? 0,
+                Ninos = request.PassengersBreakdown?.Children ?? 0,
+                Bebes = request.PassengersBreakdown?.Infants ?? 0
             };
 
-            await _uow.Holds.AddAsync(hold);
+            await _uow.BloqueosTemporales.AddAsync(hold);
             await _uow.CompleteAsync();
 
             return new HoldResponse
             {
-                HoldId = hold.HoldId.ToString(),
+                HoldId = hold.BloqueoId.ToString(),
                 Status = "HELD",
-                ExpiresAt = hold.ExpiresAt.ToString("o"),
-                TtlMinutes = hold.TtlMinutes,
+                ExpiresAt = hold.FechaExpiracion.ToString("o"),
+                TtlMinutes = hold.TiempoVidaMinutos,
                 LockedPrice = new MoneyAmount
                 {
                     Currency = "USD",
@@ -102,31 +102,31 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "HoldId inválido");
             }
 
-            var hold = await _uow.Holds.GetByIdAsync(parsedHoldId);
+            var hold = await _uow.BloqueosTemporales.GetByIdAsync(parsedHoldId);
             if (hold == null)
             {
                 throw new AerocacheProblemException(404, "OFFER_NO_LONGER_AVAILABLE", "Hold no encontrado");
             }
 
-            int remainingSeconds = (int)(hold.ExpiresAt - DateTime.UtcNow).TotalSeconds;
-            if (remainingSeconds <= 0 && hold.Status == "HELD")
+            int remainingSeconds = (int)(hold.FechaExpiracion - DateTime.UtcNow).TotalSeconds;
+            if (remainingSeconds <= 0 && hold.Estado == "HELD")
             {
-                hold.Status = "EXPIRED";
+                hold.Estado = "EXPIRED";
                 remainingSeconds = 0;
                 await _uow.CompleteAsync();
             }
 
             return new HoldStatusResponse
             {
-                Status = hold.Status,
-                ExpiresAt = hold.ExpiresAt.ToString("o"),
+                Status = hold.Estado,
+                ExpiresAt = hold.FechaExpiracion.ToString("o"),
                 RemainingSeconds = Math.Max(0, remainingSeconds),
                 LockedPrice = new MoneyAmount
                 {
-                    Currency = hold.Currency,
-                    BaseFare = hold.LockedBaseFare.ToString("F2", CultureInfo.InvariantCulture),
-                    Taxes = hold.LockedTaxes.ToString("F2", CultureInfo.InvariantCulture),
-                    Total = hold.LockedTotal.ToString("F2", CultureInfo.InvariantCulture)
+                    Currency = hold.Moneda,
+                    BaseFare = hold.TarifaBaseBloqueada.ToString("F2", CultureInfo.InvariantCulture),
+                    Taxes = hold.ImpuestosBloqueados.ToString("F2", CultureInfo.InvariantCulture),
+                    Total = hold.TotalBloqueado.ToString("F2", CultureInfo.InvariantCulture)
                 }
             };
         }
@@ -138,13 +138,13 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "HoldId inválido");
             }
 
-            var hold = await _uow.Holds.GetByIdAsync(parsedHoldId);
+            var hold = await _uow.BloqueosTemporales.GetByIdAsync(parsedHoldId);
             if (hold == null)
             {
                 throw new AerocacheProblemException(404, "OFFER_NO_LONGER_AVAILABLE", "Hold no encontrado");
             }
 
-            hold.Status = "RELEASED";
+            hold.Estado = "RELEASED";
             await _uow.CompleteAsync();
         }
     }

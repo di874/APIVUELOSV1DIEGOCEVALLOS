@@ -25,46 +25,46 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
-            var booking = await _uow.Bookings.Query()
-                .Include(b => b.Passengers)
-                .Include(b => b.BoardingPasses)
-                .FirstOrDefaultAsync(b => b.BookingId == id);
+            var booking = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
+                .Include(b => b.PasesAbordar)
+                .FirstOrDefaultAsync(b => b.ReservaId == id);
 
             if (booking == null)
                 throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
 
-            if (booking.Status == "CANCELLED")
+            if (booking.Estado == "CANCELLED")
                 throw new AerocacheProblemException(409, "CHECK_IN_NOT_AVAILABLE", "No se puede realizar check-in de un vuelo cancelado");
 
-            string segmentId = $"SEG-{booking.FlightId ?? "0"}";
+            string segmentId = $"SEG-{booking.VueloId ?? "0"}";
             var checkedPassengers = new List<CheckedInPassengerDto>();
 
             int seatCounter = 12;
-            foreach (var passenger in booking.Passengers)
+            foreach (var passenger in booking.Pasajeros)
             {
-                passenger.IsCheckedIn = true;
-                if (string.IsNullOrWhiteSpace(passenger.AssignedSeatNumber))
+                passenger.TieneCheckIn = true;
+                if (string.IsNullOrWhiteSpace(passenger.NumeroAsientoAsignado))
                 {
-                    passenger.AssignedSeatNumber = $"{seatCounter++}A";
+                    passenger.NumeroAsientoAsignado = $"{seatCounter++}A";
                 }
 
                 // Check if Boarding Pass already exists, if not generate one
-                var bp = booking.BoardingPasses.FirstOrDefault(b => b.PassengerId == passenger.Id);
+                var bp = booking.PasesAbordar.FirstOrDefault(b => b.PasajeroId == passenger.Id);
                 if (bp == null)
                 {
-                    bp = new BoardingPass
+                    bp = new PaseAbordar
                     {
-                        BookingId = booking.BookingId,
-                        PassengerId = passenger.Id,
-                        SegmentId = segmentId,
-                        Seat = passenger.AssignedSeatNumber,
-                        BoardingGroup = "Grupo 2",
-                        BoardingPosition = new Random().Next(1, 40).ToString(),
-                        Barcode = $"M1{passenger.LastName}/{passenger.FirstName}  EAC1401 {passenger.AssignedSeatNumber} {booking.Pnr}",
-                        BarcodeType = "QR",
-                        CreatedAt = DateTime.UtcNow
+                        ReservaId = booking.ReservaId,
+                        PasajeroId = passenger.Id,
+                        SegmentoId = segmentId,
+                        Asiento = passenger.NumeroAsientoAsignado,
+                        GrupoAbordaje = "Grupo 2",
+                        PosicionAbordaje = new Random().Next(1, 40).ToString(),
+                        CodigoBarras = $"M1{passenger.Apellido}/{passenger.Nombre}  EAC1401 {passenger.NumeroAsientoAsignado} {booking.Pnr}",
+                        TipoCodigoBarras = "QR",
+                        FechaCreacion = DateTime.UtcNow
                     };
-                    booking.BoardingPasses.Add(bp);
+                    booking.PasesAbordar.Add(bp);
                 }
 
                 checkedPassengers.Add(new CheckedInPassengerDto
@@ -73,17 +73,17 @@ namespace Aerocache.Business.Services
                     Status = "CHECKED_IN",
                     Segments = new List<CheckedInSegmentDto>
                     {
-                        new() { SegmentId = segmentId, Seat = passenger.AssignedSeatNumber, Status = "CHECKED_IN" }
+                        new() { SegmentId = segmentId, Seat = passenger.NumeroAsientoAsignado, Status = "CHECKED_IN" }
                     }
                 });
             }
 
-            booking.UpdatedAt = DateTime.UtcNow;
+            booking.FechaActualizacion = DateTime.UtcNow;
             await _uow.CompleteAsync();
 
             return new CheckInResponse
             {
-                BookingId = booking.BookingId.ToString(),
+                BookingId = booking.ReservaId.ToString(),
                 Status = "COMPLETED",
                 CheckedInPassengers = checkedPassengers
             };
@@ -94,12 +94,12 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
-            var passes = await _uow.BoardingPasses.FindAsync(b => b.BookingId == id);
+            var passes = await _uow.PasesAbordar.FindAsync(b => b.ReservaId == id);
             if (!passes.Any())
             {
                 // Auto check-in to provide boarding passes if booking is confirmed
                 var checkInRes = await PerformCheckInAsync(bookingId);
-                passes = await _uow.BoardingPasses.FindAsync(b => b.BookingId == id);
+                passes = await _uow.PasesAbordar.FindAsync(b => b.ReservaId == id);
             }
 
             return new BoardingPassListResponse
@@ -107,13 +107,13 @@ namespace Aerocache.Business.Services
                 BookingId = bookingId,
                 BoardingPasses = passes.Select(b => new BoardingPassDto
                 {
-                    PassengerId = b.PassengerId,
-                    SegmentId = b.SegmentId,
-                    Seat = b.Seat,
-                    BoardingGroup = b.BoardingGroup,
-                    BoardingPosition = b.BoardingPosition,
-                    Barcode = b.Barcode,
-                    BarcodeType = b.BarcodeType
+                    PassengerId = b.PasajeroId,
+                    SegmentId = b.SegmentoId,
+                    Seat = b.Asiento,
+                    BoardingGroup = b.GrupoAbordaje,
+                    BoardingPosition = b.PosicionAbordaje,
+                    Barcode = b.CodigoBarras,
+                    BarcodeType = b.TipoCodigoBarras
                 }).ToList()
             };
         }

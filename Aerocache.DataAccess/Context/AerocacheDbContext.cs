@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Aerocache.DataAccess.Entities;
 
 namespace Aerocache.DataAccess.Context
@@ -7,64 +7,64 @@ namespace Aerocache.DataAccess.Context
     {
         public AerocacheDbContext(DbContextOptions<AerocacheDbContext> options) : base(options) { }
 
-        public DbSet<Flight> Flights => Set<Flight>();
-        public DbSet<CabinFare> CabinFares => Set<CabinFare>();
-        public DbSet<Seat> Seats => Set<Seat>();
-        public DbSet<HoldRecord> Holds => Set<HoldRecord>();
-        public DbSet<Booking> Bookings => Set<Booking>();
-        public DbSet<Passenger> Passengers => Set<Passenger>();
-        public DbSet<Ticket> Tickets => Set<Ticket>();
-        public DbSet<BoardingPass> BoardingPasses => Set<BoardingPass>();
-        public DbSet<CancellationQuoteRecord> CancellationQuotes => Set<CancellationQuoteRecord>();
-        public DbSet<DateChangeOfferRecord> DateChangeOffers => Set<DateChangeOfferRecord>();
-        public DbSet<WebhookSubscriptionRecord> WebhookSubscriptions => Set<WebhookSubscriptionRecord>();
-        public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+        public DbSet<Vuelo> Vuelos => Set<Vuelo>();
+        public DbSet<TarifaCabina> TarifasCabina => Set<TarifaCabina>();
+        public DbSet<Asiento> Asientos => Set<Asiento>();
+        public DbSet<BloqueoTemporal> BloqueosTemporales => Set<BloqueoTemporal>();
+        public DbSet<Reserva> Reservas => Set<Reserva>();
+        public DbSet<Pasajero> Pasajeros => Set<Pasajero>();
+        public DbSet<Boleto> Boletos => Set<Boleto>();
+        public DbSet<PaseAbordar> PasesAbordar => Set<PaseAbordar>();
+        public DbSet<CotizacionCancelacion> CotizacionesCancelacion => Set<CotizacionCancelacion>();
+        public DbSet<OfertaCambioFecha> OfertasCambioFecha => Set<OfertaCambioFecha>();
+        public DbSet<SuscripcionWebhook> SuscripcionesWebhooks => Set<SuscripcionWebhook>();
+        public DbSet<RegistroIdempotencia> RegistrosIdempotencia => Set<RegistroIdempotencia>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<Flight>().HasKey(x => x.Id);
-            modelBuilder.Entity<CabinFare>().HasKey(x => x.Id);
-            modelBuilder.Entity<Seat>().HasKey(x => x.Id);
-            modelBuilder.Entity<HoldRecord>().HasKey(x => x.HoldId);
-            modelBuilder.Entity<Booking>().HasKey(x => x.BookingId);
-            modelBuilder.Entity<Passenger>().HasKey(x => x.Id);
-            modelBuilder.Entity<Ticket>().HasKey(x => x.TicketId);
-            modelBuilder.Entity<BoardingPass>().HasKey(x => x.Id);
-            modelBuilder.Entity<CancellationQuoteRecord>().HasKey(x => x.QuoteId);
-            modelBuilder.Entity<DateChangeOfferRecord>().HasKey(x => x.ChangeOfferId);
-            modelBuilder.Entity<WebhookSubscriptionRecord>().HasKey(x => x.Id);
-            modelBuilder.Entity<IdempotencyRecord>().HasKey(x => x.Key);
+            modelBuilder.Entity<Vuelo>().ToTable("Vuelos").HasKey(x => x.Id);
+            modelBuilder.Entity<TarifaCabina>().ToTable("TarifasCabina").HasKey(x => x.Id);
+            modelBuilder.Entity<Asiento>().ToTable("Asientos").HasKey(x => x.Id);
+            modelBuilder.Entity<BloqueoTemporal>().ToTable("BloqueosTemporales").HasKey(x => x.BloqueoId);
+            modelBuilder.Entity<Reserva>().ToTable("Reservas").HasKey(x => x.ReservaId);
+            modelBuilder.Entity<Pasajero>().ToTable("Pasajeros").HasKey(x => x.Id);
+            modelBuilder.Entity<Boleto>().ToTable("Boletos").HasKey(x => x.BoletoId);
+            modelBuilder.Entity<PaseAbordar>().ToTable("PasesAbordar").HasKey(x => x.Id);
+            modelBuilder.Entity<CotizacionCancelacion>().ToTable("CotizacionesCancelacion").HasKey(x => x.CotizacionId);
+            modelBuilder.Entity<OfertaCambioFecha>().ToTable("OfertasCambioFecha").HasKey(x => x.OfertaCambioId);
+            modelBuilder.Entity<SuscripcionWebhook>().ToTable("SuscripcionesWebhooks").HasKey(x => x.Id);
+            modelBuilder.Entity<RegistroIdempotencia>().ToTable("RegistrosIdempotencia").HasKey(x => x.Clave);
 
-            modelBuilder.Entity<Flight>()
-                .HasMany(f => f.CabinFares)
-                .WithOne(c => c.Flight)
-                .HasForeignKey(c => c.FlightId)
+            modelBuilder.Entity<Vuelo>()
+                .HasMany(f => f.TarifasCabina)
+                .WithOne(c => c.Vuelo)
+                .HasForeignKey(c => c.VueloId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<Flight>()
-                .HasMany(f => f.Seats)
-                .WithOne(s => s.Flight)
-                .HasForeignKey(s => s.FlightId)
+            modelBuilder.Entity<Vuelo>()
+                .HasMany(f => f.Asientos)
+                .WithOne(s => s.Vuelo)
+                .HasForeignKey(s => s.VueloId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<Booking>()
-                .HasMany(b => b.Passengers)
-                .WithOne(p => p.Booking)
-                .HasForeignKey(p => p.BookingId)
+            modelBuilder.Entity<Reserva>()
+                .HasMany(b => b.Pasajeros)
+                .WithOne(p => p.Reserva)
+                .HasForeignKey(p => p.ReservaId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<Booking>()
-                .HasMany(b => b.Tickets)
-                .WithOne(t => t.Booking)
-                .HasForeignKey(t => t.BookingId)
+            modelBuilder.Entity<Reserva>()
+                .HasMany(b => b.Boletos)
+                .WithOne(t => t.Reserva)
+                .HasForeignKey(t => t.ReservaId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<Booking>()
-                .HasMany(b => b.BoardingPasses)
-                .WithOne(bp => bp.Booking)
-                .HasForeignKey(bp => bp.BookingId)
+            modelBuilder.Entity<Reserva>()
+                .HasMany(b => b.PasesAbordar)
+                .WithOne(bp => bp.Reserva)
+                .HasForeignKey(bp => bp.ReservaId)
                 .OnDelete(DeleteBehavior.Cascade);
         }
     }

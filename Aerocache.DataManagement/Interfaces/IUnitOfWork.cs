@@ -6,18 +6,18 @@ namespace Aerocache.DataManagement.Interfaces
 {
     public interface IUnitOfWork : IDisposable
     {
-        IGenericRepository<Flight> Flights { get; }
-        IGenericRepository<CabinFare> CabinFares { get; }
-        IGenericRepository<Seat> Seats { get; }
-        IGenericRepository<HoldRecord> Holds { get; }
-        IGenericRepository<Booking> Bookings { get; }
-        IGenericRepository<Passenger> Passengers { get; }
-        IGenericRepository<Ticket> Tickets { get; }
-        IGenericRepository<BoardingPass> BoardingPasses { get; }
-        IGenericRepository<CancellationQuoteRecord> CancellationQuotes { get; }
-        IGenericRepository<DateChangeOfferRecord> DateChangeOffers { get; }
-        IGenericRepository<WebhookSubscriptionRecord> WebhookSubscriptions { get; }
-        IGenericRepository<IdempotencyRecord> IdempotencyRecords { get; }
+        IGenericRepository<Vuelo> Vuelos { get; }
+        IGenericRepository<TarifaCabina> TarifasCabina { get; }
+        IGenericRepository<Asiento> Asientos { get; }
+        IGenericRepository<BloqueoTemporal> BloqueosTemporales { get; }
+        IGenericRepository<Reserva> Reservas { get; }
+        IGenericRepository<Pasajero> Pasajeros { get; }
+        IGenericRepository<Boleto> Boletos { get; }
+        IGenericRepository<PaseAbordar> PasesAbordar { get; }
+        IGenericRepository<CotizacionCancelacion> CotizacionesCancelacion { get; }
+        IGenericRepository<OfertaCambioFecha> OfertasCambioFecha { get; }
+        IGenericRepository<SuscripcionWebhook> SuscripcionesWebhooks { get; }
+        IGenericRepository<RegistroIdempotencia> RegistrosIdempotencia { get; }
 
         Task<int> CompleteAsync();
     }

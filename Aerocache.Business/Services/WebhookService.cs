@@ -22,13 +22,13 @@ namespace Aerocache.Business.Services
 
         public async Task<List<WebhookSubscriptionDto>> ListSubscriptionsAsync()
         {
-            var list = await _uow.WebhookSubscriptions.GetAllAsync();
+            var list = await _uow.SuscripcionesWebhooks.GetAllAsync();
             return list.Select(w => new WebhookSubscriptionDto
             {
                 Id = w.Id.ToString(),
                 Url = w.Url,
-                Events = JsonSerializer.Deserialize<List<string>>(w.EventsJson) ?? new(),
-                Secret = w.Secret
+                Events = JsonSerializer.Deserialize<List<string>>(w.EventosJson) ?? new(),
+                Secret = w.ClaveSecreta
             }).ToList();
         }
 
@@ -37,19 +37,19 @@ namespace Aerocache.Business.Services
             if (string.IsNullOrWhiteSpace(subscription.Url))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "URL del Webhook es obligatoria");
 
-            var record = new WebhookSubscriptionRecord
+            var record = new SuscripcionWebhook
             {
                 Id = Guid.NewGuid(),
                 Url = subscription.Url,
-                EventsJson = JsonSerializer.Serialize(subscription.Events ?? new List<string>()),
-                Secret = subscription.Secret ?? Guid.NewGuid().ToString("N")
+                EventosJson = JsonSerializer.Serialize(subscription.Events ?? new List<string>()),
+                ClaveSecreta = subscription.Secret ?? Guid.NewGuid().ToString("N")
             };
 
-            await _uow.WebhookSubscriptions.AddAsync(record);
+            await _uow.SuscripcionesWebhooks.AddAsync(record);
             await _uow.CompleteAsync();
 
             subscription.Id = record.Id.ToString();
-            subscription.Secret = record.Secret;
+            subscription.Secret = record.ClaveSecreta;
             return subscription;
         }
 
@@ -58,10 +58,10 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(id, out var parsedId))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "Id inválido");
 
-            var record = await _uow.WebhookSubscriptions.GetByIdAsync(parsedId);
+            var record = await _uow.SuscripcionesWebhooks.GetByIdAsync(parsedId);
             if (record != null)
             {
-                _uow.WebhookSubscriptions.Remove(record);
+                _uow.SuscripcionesWebhooks.Remove(record);
                 await _uow.CompleteAsync();
             }
         }

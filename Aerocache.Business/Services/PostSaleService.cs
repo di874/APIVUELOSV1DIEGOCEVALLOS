@@ -26,19 +26,19 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
-            var booking = await _uow.Bookings.Query()
-                .Include(b => b.Passengers)
-                .FirstOrDefaultAsync(b => b.BookingId == id);
+            var booking = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
+                .FirstOrDefaultAsync(b => b.ReservaId == id);
 
             if (booking == null)
                 throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
 
-            return booking.Passengers.Select(p => new BaggageOptionItem
+            return booking.Pasajeros.Select(p => new BaggageOptionItem
             {
                 PassengerId = p.Id,
-                ItineraryId = booking.ItineraryId ?? "ITIN-1",
+                ItineraryId = booking.ItinerarioId ?? "ITIN-1",
                 MaxAllowed = 3,
-                AlreadyPurchased = p.ExtraBaggageQuantity,
+                AlreadyPurchased = p.CantidadEquipajeExtra,
                 Price = new MoneyAmount
                 {
                     Currency = "USD",
@@ -52,25 +52,25 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
-            var booking = await _uow.Bookings.Query()
-                .Include(b => b.Passengers)
-                .FirstOrDefaultAsync(b => b.BookingId == id);
+            var booking = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
+                .FirstOrDefaultAsync(b => b.ReservaId == id);
 
             if (booking == null)
                 throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
 
-            var passenger = booking.Passengers.FirstOrDefault(p => p.Id == request.PassengerId);
+            var passenger = booking.Pasajeros.FirstOrDefault(p => p.Id == request.PassengerId);
             if (passenger == null)
                 throw new AerocacheProblemException(404, "VALIDATION_FAILED", "Pasajero no encontrado en la reserva");
 
-            if (passenger.ExtraBaggageQuantity + request.Quantity > 3)
+            if (passenger.CantidadEquipajeExtra + request.Quantity > 3)
             {
                 throw new AerocacheProblemException(409, "BAGGAGE_LIMIT_EXCEEDED", "Límite de maletas alcanzado (máximo 3 por pasajero)");
             }
 
-            passenger.ExtraBaggageQuantity += request.Quantity;
-            booking.GrandTotalAmount += (20.00m * request.Quantity);
-            booking.UpdatedAt = DateTime.UtcNow;
+            passenger.CantidadEquipajeExtra += request.Quantity;
+            booking.MontoTotalGeneral += (20.00m * request.Quantity);
+            booking.FechaActualizacion = DateTime.UtcNow;
 
             await _uow.CompleteAsync();
 
@@ -78,7 +78,7 @@ namespace Aerocache.Business.Services
             {
                 PassengerId = passenger.Id,
                 ItineraryId = request.ItineraryId,
-                TotalBaggage = passenger.ExtraBaggageQuantity
+                TotalBaggage = passenger.CantidadEquipajeExtra
             };
         }
 
@@ -87,53 +87,53 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
-            var booking = await _uow.Bookings.GetByIdAsync(id);
+            var booking = await _uow.Reservas.GetByIdAsync(id);
             if (booking == null)
                 throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
 
             var changeItem = request.Changes.FirstOrDefault();
             DateTime newDate = DateTime.TryParse(changeItem?.NewDepartureDate, out var parsed) ? parsed : DateTime.UtcNow.AddDays(7);
 
-            var offer = new DateChangeOfferRecord
+            var offer = new OfertaCambioFecha
             {
-                ChangeOfferId = "CHG-" + Guid.NewGuid().ToString("N")[..8].ToUpper(),
-                BookingId = booking.BookingId,
-                NewDepartureDate = newDate,
-                FareDifference = 10.00m,
-                TaxDifference = 1.50m,
-                ChangeFee = 15.00m,
-                TotalToPay = 26.50m,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(20)
+                OfertaCambioId = "CHG-" + Guid.NewGuid().ToString("N")[..8].ToUpper(),
+                ReservaId = booking.ReservaId,
+                NuevaFechaSalida = newDate,
+                DiferenciaTarifa = 10.00m,
+                DiferenciaImpuesto = 1.50m,
+                CargoCambio = 15.00m,
+                TotalPagar = 26.50m,
+                FechaExpiracion = DateTime.UtcNow.AddMinutes(20)
             };
 
-            await _uow.DateChangeOffers.AddAsync(offer);
+            await _uow.OfertasCambioFecha.AddAsync(offer);
             await _uow.CompleteAsync();
 
             return new List<DateChangeSearchOption>
             {
                 new()
                 {
-                    ChangeOfferId = offer.ChangeOfferId,
-                    ExpiresAt = offer.ExpiresAt.ToString("o"),
+                    ChangeOfferId = offer.OfertaCambioId,
+                    ExpiresAt = offer.FechaExpiracion.ToString("o"),
                     Segments = new List<FlightSegmentDto>
                     {
                         new()
                         {
-                            SegmentId = $"SEG-CHG-{booking.FlightId}",
+                            SegmentId = $"SEG-CHG-{booking.VueloId}",
                             FlightNumber = "AC1403",
                             MarketingCarrier = "AC",
                             OperatingCarrier = "AC",
                             DurationMinutes = 50,
-                            Departure = new FlightEndpoint { IataCode = booking.OriginIata, At = newDate.AddHours(10).ToString("o") },
-                            Arrival = new FlightEndpoint { IataCode = booking.DestinationIata, At = newDate.AddHours(10).AddMinutes(50).ToString("o") }
+                            Departure = new FlightEndpoint { IataCode = booking.OrigenIata, At = newDate.AddHours(10).ToString("o") },
+                            Arrival = new FlightEndpoint { IataCode = booking.DestinoIata, At = newDate.AddHours(10).AddMinutes(50).ToString("o") }
                         }
                     },
                     PriceDifference = new PriceDifferenceDto
                     {
-                        FareDifference = offer.FareDifference.ToString("F2", CultureInfo.InvariantCulture),
-                        TaxDifference = offer.TaxDifference.ToString("F2", CultureInfo.InvariantCulture),
-                        ChangeFee = offer.ChangeFee.ToString("F2", CultureInfo.InvariantCulture),
-                        TotalToPay = offer.TotalToPay.ToString("F2", CultureInfo.InvariantCulture)
+                        FareDifference = offer.DiferenciaTarifa.ToString("F2", CultureInfo.InvariantCulture),
+                        TaxDifference = offer.DiferenciaImpuesto.ToString("F2", CultureInfo.InvariantCulture),
+                        ChangeFee = offer.CargoCambio.ToString("F2", CultureInfo.InvariantCulture),
+                        TotalToPay = offer.TotalPagar.ToString("F2", CultureInfo.InvariantCulture)
                     }
                 }
             };
@@ -144,20 +144,20 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
-            var booking = await _uow.Bookings.GetByIdAsync(id);
+            var booking = await _uow.Reservas.GetByIdAsync(id);
             if (booking == null)
                 throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
 
-            var offer = await _uow.DateChangeOffers.FirstOrDefaultAsync(o => o.ChangeOfferId == request.ChangeOfferId);
-            if (offer == null || offer.ExpiresAt < DateTime.UtcNow)
+            var offer = await _uow.OfertasCambioFecha.FirstOrDefaultAsync(o => o.OfertaCambioId == request.ChangeOfferId);
+            if (offer == null || offer.FechaExpiracion < DateTime.UtcNow)
             {
                 throw new AerocacheProblemException(410, "CHANGE_OFFER_EXPIRED", "La cotización de cambio de fecha ha expirado");
             }
 
-            booking.DepartureDate = offer.NewDepartureDate;
-            booking.GrandTotalAmount += offer.TotalToPay;
-            booking.UpdatedAt = DateTime.UtcNow;
-            booking.ChangesHistoryJson = $"Vuelo reprogramado para el {offer.NewDepartureDate:dd/MM/yyyy}. Diferencia pagada: ${offer.TotalToPay:F2}";
+            booking.FechaSalida = offer.NuevaFechaSalida;
+            booking.MontoTotalGeneral += offer.TotalPagar;
+            booking.FechaActualizacion = DateTime.UtcNow;
+            booking.HistorialCambiosJson = $"Vuelo reprogramado para el {offer.NuevaFechaSalida:dd/MM/yyyy}. Diferencia pagada: ${offer.TotalPagar:F2}";
 
             await _uow.CompleteAsync();
 
@@ -170,39 +170,39 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
-            var booking = await _uow.Bookings.GetByIdAsync(id);
+            var booking = await _uow.Reservas.GetByIdAsync(id);
             if (booking == null)
                 throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
 
-            if (booking.Status == "CANCELLED")
+            if (booking.Estado == "CANCELLED")
                 throw new AerocacheProblemException(409, "ALREADY_CANCELLED", "La reserva ya se encuentra cancelada");
 
-            bool isTopFare = booking.FareBrand == "Top";
-            decimal refund = isTopFare ? Math.Round(booking.GrandTotalAmount * 0.90m, 2) : Math.Round(booking.GrandTotalAmount * 0.50m, 2);
-            decimal penalty = booking.GrandTotalAmount - refund;
+            bool isTopFare = booking.MarcaTarifa == "Top";
+            decimal refund = isTopFare ? Math.Round(booking.MontoTotalGeneral * 0.90m, 2) : Math.Round(booking.MontoTotalGeneral * 0.50m, 2);
+            decimal penalty = booking.MontoTotalGeneral - refund;
 
-            var quote = new CancellationQuoteRecord
+            var quote = new CotizacionCancelacion
             {
-                QuoteId = "QTE-" + Guid.NewGuid().ToString("N")[..8].ToUpper(),
-                BookingId = booking.BookingId,
-                IsRefundable = true,
-                RefundAmount = refund,
-                PenaltyAmount = penalty,
-                Currency = "USD",
-                ExpiresAt = DateTime.UtcNow.AddMinutes(30)
+                CotizacionId = "QTE-" + Guid.NewGuid().ToString("N")[..8].ToUpper(),
+                ReservaId = booking.ReservaId,
+                EsReembolsable = true,
+                MontoReembolso = refund,
+                MontoPenalidad = penalty,
+                Moneda = "USD",
+                FechaExpiracion = DateTime.UtcNow.AddMinutes(30)
             };
 
-            await _uow.CancellationQuotes.AddAsync(quote);
+            await _uow.CotizacionesCancelacion.AddAsync(quote);
             await _uow.CompleteAsync();
 
             return new CancellationQuoteResponse
             {
-                QuoteId = quote.QuoteId,
-                IsRefundable = quote.IsRefundable,
+                QuoteId = quote.CotizacionId,
+                IsRefundable = quote.EsReembolsable,
                 RefundAmount = refund.ToString("F2", CultureInfo.InvariantCulture),
                 PenaltyAmount = penalty.ToString("F2", CultureInfo.InvariantCulture),
                 Currency = "USD",
-                ExpiresAt = quote.ExpiresAt.ToString("o")
+                ExpiresAt = quote.FechaExpiracion.ToString("o")
             };
         }
 
@@ -211,29 +211,29 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
-            var booking = await _uow.Bookings.Query()
-                .Include(b => b.Tickets)
-                .FirstOrDefaultAsync(b => b.BookingId == id);
+            var booking = await _uow.Reservas.Query()
+                .Include(b => b.Boletos)
+                .FirstOrDefaultAsync(b => b.ReservaId == id);
 
             if (booking == null)
                 throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
 
-            if (booking.Status == "CANCELLED")
+            if (booking.Estado == "CANCELLED")
                 throw new AerocacheProblemException(409, "ALREADY_CANCELLED", "La reserva ya ha sido cancelada");
 
-            var quote = await _uow.CancellationQuotes.FirstOrDefaultAsync(q => q.QuoteId == request.QuoteId);
-            if (quote == null || quote.ExpiresAt < DateTime.UtcNow)
+            var quote = await _uow.CotizacionesCancelacion.FirstOrDefaultAsync(q => q.CotizacionId == request.QuoteId);
+            if (quote == null || quote.FechaExpiracion < DateTime.UtcNow)
             {
                 throw new AerocacheProblemException(410, "QUOTE_EXPIRED", "La cotización de cancelación ha expirado");
             }
 
-            booking.Status = "CANCELLED";
-            booking.CancellationReason = request.Reason ?? "Cancelado por solicitud del pasajero";
-            booking.UpdatedAt = DateTime.UtcNow;
+            booking.Estado = "CANCELLED";
+            booking.MotivoCancelacion = request.Reason ?? "Cancelado por solicitud del pasajero";
+            booking.FechaActualizacion = DateTime.UtcNow;
 
-            foreach (var t in booking.Tickets)
+            foreach (var t in booking.Boletos)
             {
-                t.Status = "REFUNDED";
+                t.Estado = "REFUNDED";
             }
 
             await _uow.CompleteAsync();
@@ -244,15 +244,15 @@ namespace Aerocache.Business.Services
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
-            var booking = await _uow.Bookings.Query()
-                .Include(b => b.Passengers)
-                .Include(b => b.BoardingPasses)
-                .FirstOrDefaultAsync(b => b.BookingId == id);
+            var booking = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
+                .Include(b => b.PasesAbordar)
+                .FirstOrDefaultAsync(b => b.ReservaId == id);
 
             if (booking == null)
                 throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
 
-            if (booking.Status == "CANCELLED")
+            if (booking.Estado == "CANCELLED")
                 throw new AerocacheProblemException(409, "CANNOT_CHANGE_SEAT", "No se puede cambiar asiento en una reserva cancelada");
 
             var newSeat = request.NewSeatNumber?.Trim().ToUpperInvariant();
@@ -260,9 +260,9 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "Debe especificar el nuevo asiento");
 
             // Check if the seat is already occupied by another booking on this flight
-            bool isTaken = await _uow.Bookings.Query()
-                .Where(b => b.FlightId == booking.FlightId && b.BookingId != booking.BookingId && (b.Status == "CONFIRMED" || b.Status == "CHECKED_IN"))
-                .AnyAsync(b => b.Passengers.Any(p => p.AssignedSeatNumber == newSeat));
+            bool isTaken = await _uow.Reservas.Query()
+                .Where(b => b.VueloId == booking.VueloId && b.ReservaId != booking.ReservaId && (b.Estado == "CONFIRMED" || b.Estado == "CHECKED_IN"))
+                .AnyAsync(b => b.Pasajeros.Any(p => p.NumeroAsientoAsignado == newSeat));
 
             if (isTaken)
             {
@@ -271,27 +271,27 @@ namespace Aerocache.Business.Services
 
             // Find passenger
             var passenger = string.IsNullOrEmpty(request.PassengerId)
-                ? booking.Passengers.FirstOrDefault()
-                : booking.Passengers.FirstOrDefault(p => p.Id == request.PassengerId);
+                ? booking.Pasajeros.FirstOrDefault()
+                : booking.Pasajeros.FirstOrDefault(p => p.Id == request.PassengerId);
 
             if (passenger == null)
                 throw new AerocacheProblemException(404, "PASSENGER_NOT_FOUND", "Pasajero no encontrado en la reserva");
 
-            passenger.AssignedSeatNumber = newSeat;
+            passenger.NumeroAsientoAsignado = newSeat;
 
             // If boarding pass already issued, update seat on boarding pass too
-            var bp = booking.BoardingPasses.FirstOrDefault(b => b.PassengerId == passenger.Id);
+            var bp = booking.PasesAbordar.FirstOrDefault(b => b.PasajeroId == passenger.Id);
             if (bp != null)
             {
-                bp.Seat = newSeat;
+                bp.Asiento = newSeat;
             }
 
-            booking.UpdatedAt = DateTime.UtcNow;
+            booking.FechaActualizacion = DateTime.UtcNow;
             await _uow.CompleteAsync();
 
             return new ChangeSeatResponse
             {
-                BookingId = booking.BookingId.ToString(),
+                BookingId = booking.ReservaId.ToString(),
                 PassengerId = passenger.Id,
                 SeatNumber = newSeat,
                 Message = $"Asiento actualizado exitosamente a {newSeat}"

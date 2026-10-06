@@ -17,10 +17,17 @@ export default function App() {
   const [searchResults, setSearchResults] = useState(null);
   const [searchError, setSearchError] = useState(null);
 
+  // Passengers state
+  const [passengerList, setPassengerList] = useState([
+    { id: 'pax-adult-1', index: 1, type: 'ADULT', label: 'Pasajero 1 (Adulto)' }
+  ]);
+  const [passengersBreakdown, setPassengersBreakdown] = useState({ adults: 1, youths: 0, children: 0, infants: 0 });
+
   // SeatMap modal state
   const [seatMapOpen, setSeatMapOpen] = useState(false);
   const [seatMapData, setSeatMapData] = useState(null);
   const [selectedSeat, setSelectedSeat] = useState(null);
+  const [assignedSeatsMap, setAssignedSeatsMap] = useState({});
 
   // Checkout & Hold state
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -32,9 +39,19 @@ export default function App() {
   const [currentBooking, setCurrentBooking] = useState(null);
   const [currentBoardingPasses, setCurrentBoardingPasses] = useState([]);
 
+  // Hold & Pending Fare state for step-by-step seat selection
+  const [pendingFare, setPendingFare] = useState(null);
+  const [isBookingFlow, setIsBookingFlow] = useState(false);
+
   const handleSearch = async (searchParams) => {
     setSearchLoading(true);
     setSearchError(null);
+    if (searchParams.passengerList) {
+      setPassengerList(searchParams.passengerList);
+    }
+    if (searchParams.passengers) {
+      setPassengersBreakdown(searchParams.passengers);
+    }
     try {
       const data = await searchFlights(searchParams);
       setSearchResults(data);
@@ -45,10 +62,6 @@ export default function App() {
       setSearchLoading(false);
     }
   };
-
-  // Hold & Pending Fare state for step-by-step seat selection
-  const [pendingFare, setPendingFare] = useState(null);
-  const [isBookingFlow, setIsBookingFlow] = useState(false);
 
   const handleOpenSeatMap = async (offerId, segmentId) => {
     setIsBookingFlow(false);
@@ -61,22 +74,31 @@ export default function App() {
     }
   };
 
-  const handleSelectSeat = async (seat) => {
-    setSelectedSeat(seat);
+  // Multiple seats selection handler
+  const handleSelectSeats = async (seatsMap, paxList) => {
+    setAssignedSeatsMap(seatsMap);
+    const firstSeat = Object.values(seatsMap)[0] || '14A';
+    setSelectedSeat(firstSeat);
 
     // If changing seat from already opened checkout:
     if (selectedFare && !isBookingFlow) {
-      setSelectedFare(prev => ({ ...prev, selectedSeat: seat }));
+      setSelectedFare(prev => ({ ...prev, assignedSeatsMap: seatsMap, selectedSeat: firstSeat }));
       return;
     }
 
-    // Step 1 -> Step 2: Proceed to Checkout with selected seat
+    // Step 1 -> Step 2: Proceed to Checkout with selected seats
     if (pendingFare && isBookingFlow) {
       const fareInfo = pendingFare;
       try {
-        const hold = await createHold(fareInfo.offerId, fareInfo.itineraryId, fareInfo.cabinClass, fareInfo.fareBrand);
+        const hold = await createHold(
+          fareInfo.offerId,
+          fareInfo.itineraryId,
+          fareInfo.cabinClass,
+          fareInfo.fareBrand,
+          passengersBreakdown
+        );
         setHoldData(hold);
-        setSelectedFare({ ...fareInfo, selectedSeat: seat });
+        setSelectedFare({ ...fareInfo, assignedSeatsMap: seatsMap, selectedSeat: firstSeat });
         setCheckoutOpen(true);
       } catch (err) {
         alert('Error al congelar tarifa: ' + err.message);
@@ -84,6 +106,13 @@ export default function App() {
         setIsBookingFlow(false);
       }
     }
+  };
+
+  const handleSelectSeat = (seat) => {
+    setSelectedSeat(seat);
+    const firstId = passengerList[0]?.id || 'pax-adult-1';
+    const newMap = { ...assignedSeatsMap, [firstId]: seat };
+    setAssignedSeatsMap(newMap);
   };
 
   // Step 1: User selects fare -> Opens SeatMap FIRST!
@@ -104,19 +133,37 @@ export default function App() {
     setCheckoutOpen(false);
     setCurrentBooking(booking);
 
-    // Bloquear inmediatamente el asiento confirmado en almacenamiento local persistente
+    // Bloquear inmediatamente todos los asientos confirmados en almacenamiento local persistente
     try {
       const flightNum = booking.itineraries?.[0]?.segments?.[0]?.flightNumber 
         || pendingFare?.segment?.flightNumber 
         || selectedFare?.segment?.flightNumber;
-      const seat = booking.passengers?.[0]?.assignedSeatNumber || selectedFare?.selectedSeat;
       
-      if (flightNum && seat) {
+      const seatsToBlock = [];
+      if (Array.isArray(booking.passengers)) {
+        booking.passengers.forEach(p => {
+          if (p.assignedSeatNumber && !seatsToBlock.includes(p.assignedSeatNumber)) {
+            seatsToBlock.push(p.assignedSeatNumber);
+          }
+        });
+      }
+      if (assignedSeatsMap) {
+        Object.values(assignedSeatsMap).forEach(s => {
+          if (s && !seatsToBlock.includes(s)) seatsToBlock.push(s);
+        });
+      }
+      if (selectedFare?.selectedSeat && !seatsToBlock.includes(selectedFare.selectedSeat)) {
+        seatsToBlock.push(selectedFare.selectedSeat);
+      }
+
+      if (flightNum && seatsToBlock.length > 0) {
         const stored = JSON.parse(localStorage.getItem('aerocache_blocked_seats') || '{}');
         const list = stored[flightNum] || [];
-        if (!list.includes(seat)) {
-          list.push(seat);
-        }
+        seatsToBlock.forEach(s => {
+          if (!list.includes(s)) {
+            list.push(s);
+          }
+        });
         stored[flightNum] = list;
         localStorage.setItem('aerocache_blocked_seats', JSON.stringify(stored));
       }
@@ -234,7 +281,10 @@ export default function App() {
         onClose={() => { setSeatMapOpen(false); setIsBookingFlow(false); }}
         seatMapData={seatMapData}
         onSelectSeat={handleSelectSeat}
+        onSelectSeats={handleSelectSeats}
         selectedSeat={selectedFare?.selectedSeat || selectedSeat}
+        selectedSeatsMap={assignedSeatsMap}
+        passengerList={passengerList}
         flightInfo={pendingFare?.segment?.flightNumber || selectedFare?.segment?.flightNumber}
         isBookingFlow={isBookingFlow}
         selectedFareBrand={pendingFare?.fareBrand || selectedFare?.fareBrand}
@@ -245,6 +295,8 @@ export default function App() {
         onClose={() => setCheckoutOpen(false)}
         holdData={holdData}
         selectedFare={selectedFare}
+        passengerList={passengerList}
+        assignedSeatsMap={assignedSeatsMap}
         onBookingSuccess={handleBookingSuccess}
         onOpenSeatMap={handleOpenSeatMap}
       />

@@ -1,34 +1,89 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock, ShieldCheck, CreditCard, CheckCircle } from 'lucide-react';
-import { getHoldStatus, createBooking } from '../api';
+import { X, Clock, ShieldCheck, CreditCard, CheckCircle, Users, User, Baby } from 'lucide-react';
+import { createBooking } from '../api';
 
-export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare, onBookingSuccess, onOpenSeatMap }) {
+export default function CheckoutModal({ 
+  isOpen, 
+  onClose, 
+  holdData, 
+  selectedFare, 
+  passengerList,
+  assignedSeatsMap,
+  onBookingSuccess, 
+  onOpenSeatMap 
+}) {
   const [timeLeft, setTimeLeft] = useState(900); // 15 min default
-  const [formData, setFormData] = useState({
-    firstName: 'Diego',
-    lastName: 'Cevallos',
-    documentType: 'NATIONAL_ID',
-    documentNumber: '1751030295',
-    birthDate: '1998-05-15',
-    gender: 'M',
-    email: 'diego.cevallos@gmail.com',
-    phone: '+593991234567',
-    assignedSeat: selectedFare?.selectedSeat || '14A'
-  });
+  const [contactEmail, setContactEmail] = useState('diego.cevallos@gmail.com');
+  const [contactPhone, setContactPhone] = useState('+593991234567');
   const [paymentRef, setPaymentRef] = useState('PAY-LATAM-' + Math.floor(100000 + Math.random() * 900000));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (selectedFare?.selectedSeat) {
-      setFormData(prev => ({ ...prev, assignedSeat: selectedFare.selectedSeat }));
-    }
-  }, [selectedFare?.selectedSeat]);
+  const effectivePaxList = Array.isArray(passengerList) && passengerList.length > 0 
+    ? passengerList 
+    : [{ id: 'pax-1', index: 1, type: 'ADULT', label: 'Pasajero 1 (Adulto)' }];
 
+  const [passengersData, setPassengersData] = useState([]);
+
+  // Initialize or update passengers list
+  useEffect(() => {
+    if (isOpen) {
+      const seatsMap = assignedSeatsMap || selectedFare?.assignedSeatsMap || {};
+      const initial = effectivePaxList.map((pax, idx) => {
+        const isChild = pax.type === 'CHILD';
+        const assignedSeat = seatsMap[pax.id] || (idx === 0 ? selectedFare?.selectedSeat : '') || (14 + idx) + 'A';
+
+        // Prepopulate default sensible names
+        let defaultFirstName = 'Diego';
+        let defaultLastName = 'Cevallos';
+        let defaultDocNum = '1751030295';
+        let defaultBirth = '1998-05-15';
+
+        if (idx === 1) {
+          defaultFirstName = isChild ? 'Mateo' : 'Andrea';
+          defaultLastName = 'Cevallos';
+          defaultDocNum = isChild ? '1728491823' : '1719284736';
+          defaultBirth = isChild ? '2017-08-20' : '1999-10-12';
+        } else if (idx > 1) {
+          defaultFirstName = isChild ? `Hijo${idx}` : `Pasajero${idx}`;
+          defaultLastName = 'Cevallos';
+          defaultDocNum = '17' + Math.floor(10000000 + Math.random() * 90000000);
+          defaultBirth = isChild ? '2018-03-10' : '1996-02-14';
+        }
+
+        return {
+          id: pax.id,
+          index: pax.index,
+          passengerType: pax.type,
+          firstName: defaultFirstName,
+          lastName: defaultLastName,
+          documentType: 'NATIONAL_ID',
+          documentNumber: defaultDocNum,
+          birthDate: defaultBirth,
+          gender: 'M',
+          assignedSeat
+        };
+      });
+      setPassengersData(initial);
+    }
+  }, [isOpen, passengerList, assignedSeatsMap, selectedFare]);
+
+  // Sync assigned seat changes if updated from seat map
+  useEffect(() => {
+    if (assignedSeatsMap && Object.keys(assignedSeatsMap).length > 0) {
+      setPassengersData(prev => prev.map(p => ({
+        ...p,
+        assignedSeat: assignedSeatsMap[p.id] || p.assignedSeat
+      })));
+    } else if (selectedFare?.selectedSeat) {
+      setPassengersData(prev => prev.map((p, idx) => idx === 0 ? { ...p, assignedSeat: selectedFare.selectedSeat } : p));
+    }
+  }, [assignedSeatsMap, selectedFare?.selectedSeat]);
+
+  // Hold Countdown Timer
   useEffect(() => {
     if (!holdData?.holdId) return;
 
-    // Timer countdown
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
@@ -47,12 +102,31 @@ export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare,
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
 
+  const updatePassenger = (index, field, value) => {
+    setPassengersData(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      const booking = await createBooking(holdData.holdId, formData, paymentRef);
+      const bookingPayload = {
+        passengers: passengersData.map(p => ({
+          ...p,
+          contact: {
+            email: contactEmail,
+            phone: contactPhone
+          }
+        })),
+        contactEmail,
+        contactPhone
+      };
+      const booking = await createBooking(holdData.holdId, bookingPayload, paymentRef);
       onBookingSuccess(booking);
     } catch (err) {
       setError(err.message);
@@ -79,8 +153,8 @@ export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare,
         backgroundColor: '#fff',
         borderRadius: '20px',
         width: '100%',
-        maxWidth: '750px',
-        maxHeight: '90vh',
+        maxWidth: '780px',
+        maxHeight: '92vh',
         display: 'flex',
         flexDirection: 'column',
         boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
@@ -117,11 +191,11 @@ export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare,
             <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--color-latam-navy)' }}>
               Finalizar Reserva y Emisión de Billete
             </h2>
-            <p style={{ fontSize: '13px', color: '#64748b' }}>
-              Tarifa {selectedFare?.fareBrand} • Vuelo {selectedFare?.segment?.flightNumber} ({selectedFare?.segment?.departure?.iataCode} ✈ {selectedFare?.segment?.arrival?.iataCode})
+            <p style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
+              Tarifa <strong>{selectedFare?.fareBrand}</strong> • Vuelo {selectedFare?.segment?.flightNumber} ({selectedFare?.segment?.departure?.iataCode} ✈ {selectedFare?.segment?.arrival?.iataCode}) • {passengersData.length} {passengersData.length === 1 ? 'Pasajero' : 'Pasajeros'}
             </p>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', color: '#64748b' }}>
+          <button onClick={onClose} style={{ background: 'transparent', color: '#64748b', border: 'none', cursor: 'pointer' }}>
             <X size={22} />
           </button>
         </div>
@@ -134,93 +208,169 @@ export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare,
             </div>
           )}
 
-          <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--color-latam-navy)', marginBottom: '12px' }}>
-            1. Datos del Pasajero
-          </h3>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
-            <div>
-              <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Nombres</label>
-              <input
-                type="text"
-                required
-                value={formData.firstName}
-                onChange={e => setFormData({ ...formData, firstName: e.target.value })}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-              />
+          {/* Section 1: Passenger Cards */}
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--color-latam-navy)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Users size={18} color="var(--color-latam-coral)" />
+                1. Datos de los Pasajeros ({passengersData.length})
+              </h3>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                Requerido para emisión de billete electrónico
+              </span>
             </div>
-            <div>
-              <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Apellidos</label>
-              <input
-                type="text"
-                required
-                value={formData.lastName}
-                onChange={e => setFormData({ ...formData, lastName: e.target.value })}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-              />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {passengersData.map((pax, idx) => {
+                const isChild = pax.passengerType === 'CHILD';
+
+                return (
+                  <div
+                    key={pax.id || idx}
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '12px',
+                      padding: '16px 20px',
+                      backgroundColor: '#fafbfc',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+                    }}
+                  >
+                    {/* Passenger Card Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          fontSize: '13px',
+                          fontWeight: '800',
+                          color: '#fff',
+                          backgroundColor: 'var(--color-latam-navy)',
+                          padding: '3px 10px',
+                          borderRadius: '6px'
+                        }}>
+                          {isChild ? '🧒 Niño (2-11 años)' : '👤 Adulto'} • Pasajero {idx + 1}
+                        </span>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
+                          {pax.firstName} {pax.lastName}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '12px', color: '#64748b' }}>Asiento:</span>
+                        <strong style={{
+                          fontSize: '13px',
+                          color: '#fff',
+                          backgroundColor: 'var(--color-latam-coral)',
+                          padding: '2px 8px',
+                          borderRadius: '6px'
+                        }}>
+                          {pax.assignedSeat || '14A'}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {/* Passenger Inputs Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Nombres</label>
+                        <input
+                          type="text"
+                          required
+                          value={pax.firstName}
+                          onChange={e => updatePassenger(idx, 'firstName', e.target.value)}
+                          style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Apellidos</label>
+                        <input
+                          type="text"
+                          required
+                          value={pax.lastName}
+                          onChange={e => updatePassenger(idx, 'lastName', e.target.value)}
+                          style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.2fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Documento</label>
+                        <select
+                          value={pax.documentType}
+                          onChange={e => updatePassenger(idx, 'documentType', e.target.value)}
+                          style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', background: '#fff' }}
+                        >
+                          <option value="NATIONAL_ID">Cédula</option>
+                          <option value="PASSPORT">Pasaporte</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Número Doc.</label>
+                        <input
+                          type="text"
+                          required
+                          value={pax.documentNumber}
+                          onChange={e => updatePassenger(idx, 'documentNumber', e.target.value)}
+                          style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Nacimiento</label>
+                        <input
+                          type="date"
+                          required
+                          value={pax.birthDate}
+                          onChange={e => updatePassenger(idx, 'birthDate', e.target.value)}
+                          style={{ width: '100%', padding: '9px 8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Género</label>
+                        <select
+                          value={pax.gender}
+                          onChange={e => updatePassenger(idx, 'gender', e.target.value)}
+                          style={{ width: '100%', padding: '9px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', background: '#fff' }}
+                        >
+                          <option value="M">Masc.</option>
+                          <option value="F">Fem.</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px', marginBottom: '16px' }}>
-            <div>
-              <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Tipo Documento</label>
-              <select
-                value={formData.documentType}
-                onChange={e => setFormData({ ...formData, documentType: e.target.value })}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', background: '#fff' }}
-              >
-                <option value="NATIONAL_ID">Cédula de Identidad</option>
-                <option value="PASSPORT">Pasaporte</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Número Documento</label>
-              <input
-                type="text"
-                required
-                value={formData.documentNumber}
-                onChange={e => setFormData({ ...formData, documentNumber: e.target.value })}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Fecha Nacimiento</label>
-              <input
-                type="date"
-                required
-                value={formData.birthDate}
-                onChange={e => setFormData({ ...formData, birthDate: e.target.value })}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-              />
+          {/* Section 2: Shared Contact Information */}
+          <div style={{ marginBottom: '24px', backgroundColor: '#f8fafc', padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--color-latam-navy)', marginBottom: '10px' }}>
+              2. Datos de Contacto para Envío de Billetes
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Correo Electrónico (E-Ticket y Pase)</label>
+                <input
+                  type="email"
+                  required
+                  value={contactEmail}
+                  onChange={e => setContactEmail(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Teléfono Móvil (SMS)</label>
+                <input
+                  type="tel"
+                  required
+                  value={contactPhone}
+                  onChange={e => setContactPhone(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
+                />
+              </div>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '14px', marginBottom: '24px' }}>
-            <div>
-              <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Correo Electrónico (para e-ticket)</label>
-              <input
-                type="email"
-                required
-                value={formData.email}
-                onChange={e => setFormData({ ...formData, email: e.target.value })}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>Teléfono Móvil</label>
-              <input
-                type="tel"
-                required
-                value={formData.phone}
-                onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
-              />
-            </div>
-          </div>
-
-          <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--color-latam-navy)', marginBottom: '12px' }}>
-            2. Selección de Asiento en el Vuelo
-          </h3>
+          {/* Section 3: Seat Assignment Summary */}
           <div style={{
             backgroundColor: '#f8fafc',
             padding: '16px 20px',
@@ -231,29 +381,12 @@ export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare,
             justifyContent: 'space-between',
             alignItems: 'center'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <div style={{
-                width: '46px',
-                height: '46px',
-                borderRadius: '10px',
-                backgroundColor: 'var(--color-latam-navy)',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: '900',
-                fontSize: '17px',
-                boxShadow: '0 4px 10px rgba(0,25,53,0.2)'
-              }}>
-                {formData.assignedSeat || '14A'}
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--color-latam-navy)' }}>
+                Asientos Asignados ({passengersData.map(p => p.assignedSeat).join(', ')})
               </div>
-              <div>
-                <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--color-latam-navy)' }}>
-                  Asiento {formData.assignedSeat || '14A'} reservado
-                </div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>
-                  Flota Airbus A320 • Asignado a {formData.firstName} {formData.lastName}
-                </div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                Flota Airbus A320 • Todos los pasajeros cuentan con asiento reservado y confirmado
               </div>
             </div>
 
@@ -264,12 +397,12 @@ export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare,
                 onOpenSeatMap(selectedFare?.offerId, segId);
               }}
               style={{
-                padding: '9px 18px',
+                padding: '8px 16px',
                 borderRadius: '8px',
                 backgroundColor: '#fff',
                 border: '1.5px solid var(--color-latam-coral)',
                 color: 'var(--color-latam-coral)',
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: 'bold',
                 cursor: 'pointer',
                 display: 'flex',
@@ -278,20 +411,21 @@ export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare,
                 transition: 'all 0.2s'
               }}
             >
-              💺 Cambiar Asiento en el Mapa
+              💺 Modificar en el Mapa
             </button>
           </div>
 
-          <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--color-latam-navy)', marginBottom: '12px' }}>
+          {/* Section 4: Payment Simulation */}
+          <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--color-latam-navy)', marginBottom: '10px' }}>
             3. Pago & Acreditación de Referencia
           </h3>
           <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CreditCard size={20} color="var(--color-latam-coral)" />
-                <span style={{ fontSize: '14px', fontWeight: '600' }}>Referencia de Pago Acreditada (Payment Gateway)</span>
+                <CreditCard size={18} color="var(--color-latam-coral)" />
+                <span style={{ fontSize: '13px', fontWeight: '600' }}>Referencia de Pago Bancario / Pasarela</span>
               </div>
-              <span style={{ backgroundColor: '#dcfce7', color: '#15803d', fontSize: '11px', fontWeight: 'bold', padding: '3px 8px', borderRadius: '4px' }}>
+              <span style={{ backgroundColor: '#dcfce7', color: '#15803d', fontSize: '11px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px' }}>
                 APROBADO
               </span>
             </div>
@@ -301,16 +435,13 @@ export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare,
               onChange={e => setPaymentRef(e.target.value)}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
             />
-            <p style={{ fontSize: '11px', color: '#64748b', marginTop: '6px' }}>
-              Conforme al contrato OpenAPI, la API recibe la referencia de pago gestionada por el dominio de pagos.
-            </p>
           </div>
 
-          {/* Pricing Summary */}
+          {/* Pricing Summary & Submit */}
           <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>Total a pagar con impuestos (IVA 15%)</div>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: 'var(--color-latam-navy)' }}>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>Total a pagar con impuestos ({passengersData.length} pax, IVA 15%)</div>
+              <div style={{ fontSize: '26px', fontWeight: '900', color: 'var(--color-latam-navy)' }}>
                 ${holdData.lockedPrice?.total} <span style={{ fontSize: '14px', fontWeight: 'normal' }}>USD</span>
               </div>
             </div>
@@ -319,20 +450,22 @@ export default function CheckoutModal({ isOpen, onClose, holdData, selectedFare,
               type="submit"
               disabled={loading || timeLeft <= 0}
               style={{
-                padding: '14px 32px',
+                padding: '14px 28px',
                 borderRadius: '8px',
                 backgroundColor: 'var(--color-latam-coral)',
                 color: '#fff',
-                fontSize: '16px',
+                fontSize: '15px',
                 fontWeight: '800',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
+                border: 'none',
+                cursor: loading || timeLeft <= 0 ? 'not-allowed' : 'pointer',
                 opacity: loading || timeLeft <= 0 ? 0.6 : 1
               }}
             >
-              <CheckCircle size={20} />
-              {loading ? 'Emitiendo billete...' : 'Confirmar y Emitir Reserva'}
+              <CheckCircle size={18} />
+              {loading ? 'Emitiendo billetes...' : `Confirmar y Emitir Reserva (${passengersData.length})`}
             </button>
           </div>
         </form>

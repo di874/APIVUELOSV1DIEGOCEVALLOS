@@ -1,32 +1,50 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Plane, Zap, ShieldCheck, Sparkles, Info, Lock, AlertCircle } from 'lucide-react';
+import { X, Check, Plane, Zap, ShieldCheck, Sparkles, Info, Lock, AlertCircle, Users, User, Baby } from 'lucide-react';
 
 export default function SeatMapModal({ 
   isOpen, 
   onClose, 
   seatMapData, 
   onSelectSeat, 
+  onSelectSeats,
   selectedSeat, 
+  selectedSeatsMap,
+  passengerList,
   flightInfo, 
   isBookingFlow,
   selectedFareBrand 
 }) {
-  const [currentSeat, setCurrentSeat] = useState(selectedSeat || '');
+  const effectivePaxList = Array.isArray(passengerList) && passengerList.length > 0 
+    ? passengerList 
+    : [{ id: 'pax-1', index: 1, type: 'ADULT', label: 'Pasajero 1 (Adulto)' }];
+
+  const [assignedSeats, setAssignedSeats] = useState({});
+  const [activePaxId, setActivePaxId] = useState(effectivePaxList[0]?.id || 'pax-1');
   const [activeSectionFilter, setActiveSectionFilter] = useState('ALL');
   const [fareAlertMessage, setFareAlertMessage] = useState(null);
 
   const fareBrandNorm = (selectedFareBrand || 'Top').trim();
   const fareBrandLower = fareBrandNorm.toLowerCase(); // 'top' | 'plus' | 'light'
 
-  // Determine allowed rows and initial tab based on fare brand:
-  // - Top (precio más alto): Asientos Premium (Filas 1 a 3) y acceso completo
-  // - Plus (precio normal/medio): Asientos de la MITAD del avión (Filas 4 a 12), Premium 1-3 bloqueados
-  // - Light (básico/estándar): Asientos de ATRÁS del avión (Filas 13 a 24), Delantera y Media 1-12 bloqueadas
+  // Initialize or reset state when modal opens
   useEffect(() => {
     if (isOpen) {
-      setCurrentSeat(selectedSeat || '');
       setFareAlertMessage(null);
 
+      // Build initial assigned seats map
+      let initialMap = {};
+      if (selectedSeatsMap && typeof selectedSeatsMap === 'object' && Object.keys(selectedSeatsMap).length > 0) {
+        initialMap = { ...selectedSeatsMap };
+      } else if (selectedSeat && effectivePaxList[0]) {
+        initialMap[effectivePaxList[0].id] = selectedSeat;
+      }
+      setAssignedSeats(initialMap);
+
+      // Find first passenger without a seat
+      const firstUnassigned = effectivePaxList.find(p => !initialMap[p.id]);
+      setActivePaxId(firstUnassigned ? firstUnassigned.id : effectivePaxList[0]?.id);
+
+      // Default section filter by fare brand
       if (fareBrandLower === 'top') {
         setActiveSectionFilter('PREMIUM');
       } else if (fareBrandLower === 'plus') {
@@ -37,9 +55,14 @@ export default function SeatMapModal({
         setActiveSectionFilter('ALL');
       }
     }
-  }, [isOpen, selectedSeat, fareBrandLower]);
+  }, [isOpen, selectedSeat, selectedSeatsMap, fareBrandLower]);
 
   if (!isOpen || !seatMapData) return null;
+
+  // Active passenger details
+  const activePax = effectivePaxList.find(p => p.id === activePaxId) || effectivePaxList[0];
+  const totalAssignedCount = effectivePaxList.filter(p => !!assignedSeats[p.id]).length;
+  const isAllAssigned = totalAssignedCount === effectivePaxList.length;
 
   // Flatten all rows from cabins
   const allRows = seatMapData?.cabins?.flatMap(c => c.rows) || [];
@@ -77,8 +100,8 @@ export default function SeatMapModal({
       badge: 'MAYOR ESPACIO (ALAS)',
       badgeColor: '#b45309',
       badgeBg: '#fef3c7',
-      tagline: '⚡ Espacio extra para estirar las piernas sobre las alas (Mitad)',
-      fareBenefit: 'Asientos sobre el ala del Airbus A320 (PLUS y TOP)',
+      tagline: '⚡ Espacio extra para piernas sobre las alas (Mitad)',
+      fareBenefit: 'Asientos sobre el ala (PLUS y TOP) • No apto para niños',
       hasWings: true,
       rows: allRows.filter(r => r.rowNumber >= 11 && r.rowNumber <= 12)
     },
@@ -115,15 +138,15 @@ export default function SeatMapModal({
   // Class restriction logic based on selected fare:
   const isRowAllowedForFare = (rowNumber) => {
     if (fareBrandLower === 'top') {
-      // Top (precio más alto): Libre acceso a todo el avión, enfocado en Premium
+      // Top: Full access to all rows (1-24)
       return true;
     }
     if (fareBrandLower === 'plus') {
-      // Plus (normal): Asientos de la mitad del avión (4-12) y estándar (13-24). Premium (1-3) bloqueado
+      // Plus: Middle and standard (4-24). Premium (1-3) locked
       return rowNumber >= 4;
     }
     if (fareBrandLower === 'light') {
-      // Light (básico/estándar): Solo sección trasera (13-24). Delantera y media (1-12) bloqueadas
+      // Light: Rear section only (13-24). Forward and middle (1-12) locked
       return rowNumber >= 13;
     }
     return true;
@@ -139,9 +162,58 @@ export default function SeatMapModal({
     return '';
   };
 
-  // Helper to get description of chosen seat
+  const handleSeatClick = (seatNumber, rowNumber) => {
+    // 1. Check if booked
+    if (locallyBlocked.includes(seatNumber)) {
+      return;
+    }
+
+    // 2. Check Fare class restriction
+    if (!isRowAllowedForFare(rowNumber)) {
+      setFareAlertMessage(getFareRestrictionReason(rowNumber));
+      return;
+    }
+
+    // 3. Child safety regulation check: Children cannot sit in exit rows (11, 12)
+    if (activePax?.type === 'CHILD' && (rowNumber === 11 || rowNumber === 12)) {
+      setFareAlertMessage('⚠️ Por regulaciones aeronáuticas de seguridad internacional, los niños (2-11 años) no pueden viajar en filas de emergencia (filas 11 y 12). Selecciona otra fila.');
+      return;
+    }
+
+    // 4. Update assigned seats
+    const newAssigned = { ...assignedSeats };
+
+    // If another passenger in this group already had this seat, clear it
+    const otherPaxWithSeat = effectivePaxList.find(p => p.id !== activePax.id && newAssigned[p.id] === seatNumber);
+    if (otherPaxWithSeat) {
+      delete newAssigned[otherPaxWithSeat.id];
+    }
+
+    newAssigned[activePax.id] = seatNumber;
+    setAssignedSeats(newAssigned);
+    setFareAlertMessage(null);
+
+    // Auto-advance to next unassigned passenger if any
+    const nextUnassigned = effectivePaxList.find(p => p.id !== activePax.id && !newAssigned[p.id]);
+    if (nextUnassigned) {
+      setActivePaxId(nextUnassigned.id);
+    }
+  };
+
+  const handleConfirm = () => {
+    if (!isAllAssigned) return;
+
+    if (onSelectSeats) {
+      onSelectSeats(assignedSeats, effectivePaxList);
+    }
+    if (onSelectSeat && effectivePaxList[0]) {
+      onSelectSeat(assignedSeats[effectivePaxList[0].id]);
+    }
+    onClose();
+  };
+
   const getSeatDescription = (seatNum) => {
-    if (!seatNum) return null;
+    if (!seatNum) return '';
     const match = seatNum.match(/^(\d+)([A-F])$/);
     if (!match) return `Asiento ${seatNum}`;
     const row = parseInt(match[1]);
@@ -149,13 +221,7 @@ export default function SeatMapModal({
     const isWindow = col === 'A' || col === 'F';
     const isAisle = col === 'C' || col === 'D';
     const loc = isWindow ? 'Ventana' : (isAisle ? 'Pasillo' : 'Centro');
-    
-    let secName = 'Economy Estándar (Atrás)';
-    if (row <= 3) secName = 'Premium Economy (Filas 1-3)';
-    else if (row <= 10) secName = 'Economy Delantera (Filas 4-10)';
-    else if (row <= 12) secName = 'Salida de Emergencia / Alas (Filas 11-12)';
-    
-    return `${seatNum} • Fila ${row} • ${loc} • ${secName}`;
+    return `${seatNum} (${loc}, Fila ${row})`;
   };
 
   return (
@@ -176,8 +242,8 @@ export default function SeatMapModal({
         backgroundColor: '#fff',
         borderRadius: '20px',
         width: '100%',
-        maxWidth: '740px',
-        maxHeight: '92vh',
+        maxWidth: '780px',
+        maxHeight: '94vh',
         display: 'flex',
         flexDirection: 'column',
         boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
@@ -196,14 +262,14 @@ export default function SeatMapModal({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '11px', backgroundColor: 'var(--color-latam-coral)', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
-                {isBookingFlow ? 'PASO 1 DE 2: ELECCIÓN DE ASIENTO' : 'MAPA DE ASIENTOS'}
+                {isBookingFlow ? 'PASO 1 DE 2: ELECCIÓN DE ASIENTOS' : 'MAPA DE ASIENTOS'}
               </span>
               <div style={{ fontSize: '18px', fontWeight: '800' }}>Airbus A320 • Flota AEROCACHE</div>
             </div>
             <div style={{ fontSize: '12px', color: '#9bb1c9', marginTop: '4px' }}>
               {flightInfo ? `Vuelo ${flightInfo} • ` : ''}
               Tarifa seleccionada: <strong style={{ color: '#fff' }}>{fareBrandNorm.toUpperCase()}</strong> • 
-              Asientos asignados según tu clase de tarifa
+              {effectivePaxList.length} {effectivePaxList.length === 1 ? 'Pasajero' : 'Pasajeros'}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}>
@@ -211,9 +277,122 @@ export default function SeatMapModal({
           </button>
         </div>
 
+        {/* Passenger Selection Toolbar (Multi-Passenger Support) */}
+        <div style={{
+          padding: '12px 20px',
+          backgroundColor: '#0a2540',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          color: '#fff'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '12px', fontWeight: '700', color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Users size={15} color="var(--color-latam-coral)" />
+              SELECCIÓN DE ASIENTO POR PASAJERO ({totalAssignedCount} de {effectivePaxList.length} asignados):
+            </span>
+            <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+              Haz clic en cada pasajero para elegir su ubicación
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
+            {effectivePaxList.map(pax => {
+              const isCurrent = pax.id === activePaxId;
+              const seat = assignedSeats[pax.id];
+              const isChild = pax.type === 'CHILD';
+
+              return (
+                <button
+                  key={pax.id}
+                  type="button"
+                  onClick={() => {
+                    setActivePaxId(pax.id);
+                    setFareAlertMessage(null);
+                  }}
+                  style={{
+                    flex: '1 0 auto',
+                    minWidth: '170px',
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    border: isCurrent ? '2px solid var(--color-latam-coral)' : '1px solid rgba(255,255,255,0.2)',
+                    backgroundColor: isCurrent ? 'rgba(232, 17, 75, 0.15)' : 'rgba(255,255,255,0.06)',
+                    color: '#fff',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    transition: 'all 0.2s',
+                    boxShadow: isCurrent ? '0 0 12px rgba(232, 17, 75, 0.4)' : 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '50%',
+                      backgroundColor: isCurrent ? 'var(--color-latam-coral)' : (seat ? '#059669' : '#475569'),
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '11px',
+                      fontWeight: 'bold'
+                    }}>
+                      {isChild ? '🧒' : '👤'}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '12px', fontWeight: '700', color: isCurrent ? '#fff' : '#e2e8f0' }}>
+                        P{pax.index}: {isChild ? 'Niño' : 'Adulto'}
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                        {isChild ? '2-11 años' : '+12 años'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <span style={{
+                    fontSize: '12px',
+                    fontWeight: '800',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    backgroundColor: seat ? '#059669' : (isCurrent ? 'var(--color-latam-coral)' : '#334155'),
+                    color: '#fff',
+                    letterSpacing: '0.5px'
+                  }}>
+                    {seat ? `✓ ${seat}` : (isCurrent ? 'Elegir' : 'Pendiente')}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Active Pax Focus Banner */}
+          <div style={{
+            marginTop: '8px',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            backgroundColor: activePax?.type === 'CHILD' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(2, 132, 199, 0.2)',
+            border: activePax?.type === 'CHILD' ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(2, 132, 199, 0.4)',
+            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <span>
+              🎯 <strong>Asignando para:</strong> Pasajero {activePax?.index} ({activePax?.type === 'CHILD' ? 'Niño' : 'Adulto'})
+              {assignedSeats[activePax?.id] && <> • Asiento actual: <strong>{assignedSeats[activePax.id]}</strong></>}
+            </span>
+            {activePax?.type === 'CHILD' && (
+              <span style={{ color: '#fef08a', fontWeight: 'bold' }}>
+                * Restricción: No permitido en salidas de emergencia (Filas 11 y 12)
+              </span>
+            )}
+          </div>
+        </div>
+
         {/* Fare Class Notification Banner */}
         <div style={{
-          padding: '10px 20px',
+          padding: '8px 20px',
           backgroundColor: fareBrandLower === 'top' ? '#eff6ff' : (fareBrandLower === 'plus' ? '#f0fdf4' : '#f8fafc'),
           borderBottom: '1px solid #e2e8f0',
           display: 'flex',
@@ -221,10 +400,10 @@ export default function SeatMapModal({
           justifyContent: 'space-between',
           gap: '12px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px' }}>
             {fareBrandLower === 'top' && (
               <>
-                <span style={{ fontSize: '14px' }}>👑</span>
+                <span style={{ fontSize: '13px' }}>👑</span>
                 <span style={{ color: '#1e40af', fontWeight: '600' }}>
                   <strong>Tarifa TOP (Precio más alto):</strong> Tienes acceso a los asientos <strong>PREMIUM (Filas 1 a 3)</strong> con mayor reclinación y espacio para piernas.
                 </span>
@@ -232,7 +411,7 @@ export default function SeatMapModal({
             )}
             {fareBrandLower === 'plus' && (
               <>
-                <span style={{ fontSize: '14px' }}>⚡</span>
+                <span style={{ fontSize: '13px' }}>⚡</span>
                 <span style={{ color: '#166534', fontWeight: '600' }}>
                   <strong>Tarifa PLUS (Normal / Medio):</strong> Asientos habilitados en la <strong>MITAD del avión (Filas 4 a 12)</strong>. Filas 1-3 Premium reservadas para Top.
                 </span>
@@ -240,7 +419,7 @@ export default function SeatMapModal({
             )}
             {fareBrandLower === 'light' && (
               <>
-                <span style={{ fontSize: '14px' }}>💺</span>
+                <span style={{ fontSize: '13px' }}>💺</span>
                 <span style={{ color: '#475569', fontWeight: '600' }}>
                   <strong>Tarifa LIGHT (Básica / Menor precio):</strong> Asientos habilitados en la <strong>sección de ATRÁS (Filas 13 a 24)</strong>. Filas 1-12 requieren Plus o Top.
                 </span>
@@ -248,9 +427,9 @@ export default function SeatMapModal({
             )}
           </div>
           <span style={{
-            fontSize: '11px',
+            fontSize: '10px',
             fontWeight: 'bold',
-            padding: '3px 8px',
+            padding: '2px 8px',
             borderRadius: '6px',
             backgroundColor: fareBrandLower === 'top' ? '#dbeafe' : (fareBrandLower === 'plus' ? '#dcfce7' : '#e2e8f0'),
             color: fareBrandLower === 'top' ? '#1d4ed8' : (fareBrandLower === 'plus' ? '#15803d' : '#334155'),
@@ -291,7 +470,7 @@ export default function SeatMapModal({
         <div style={{
           display: 'flex',
           gap: '6px',
-          padding: '10px 18px',
+          padding: '8px 18px',
           backgroundColor: '#f1f5f9',
           borderBottom: '1px solid #e2e8f0',
           overflowX: 'auto',
@@ -311,9 +490,9 @@ export default function SeatMapModal({
               key={tab.id}
               onClick={() => setActiveSectionFilter(tab.id)}
               style={{
-                padding: '6px 12px',
+                padding: '5px 10px',
                 borderRadius: '6px',
-                fontSize: '12px',
+                fontSize: '11px',
                 fontWeight: activeSectionFilter === tab.id ? '700' : '500',
                 backgroundColor: activeSectionFilter === tab.id ? 'var(--color-latam-navy)' : '#fff',
                 color: activeSectionFilter === tab.id ? '#fff' : '#475569',
@@ -332,45 +511,49 @@ export default function SeatMapModal({
         <div style={{
           display: 'flex',
           justifyContent: 'center',
-          gap: '16px',
-          padding: '8px 12px',
+          gap: '14px',
+          padding: '6px 12px',
           backgroundColor: '#fff',
           borderBottom: '1px solid #e2e8f0',
-          fontSize: '11px',
+          fontSize: '10px',
           color: '#475569',
           flexWrap: 'wrap'
         }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: '#fff', border: '1px solid #cbd5e1', display: 'inline-block' }} /> 
-            Disponible para tu tarifa
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: '#fff', border: '1px solid #cbd5e1', display: 'inline-block' }} /> 
+            Disponible
           </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: 'var(--color-latam-coral)', display: 'inline-block' }} /> 
-            Seleccionado
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: 'var(--color-latam-coral)', display: 'inline-block' }} /> 
+            Pasajero Actual
           </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '9px', fontWeight: 'bold' }}>✕</span> 
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: '#001935', display: 'inline-block' }} /> 
+            Otro Pasajero
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '8px', fontWeight: 'bold' }}>✕</span> 
             Ocupado / Reservado
           </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: '#f1f5f9', border: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '9px' }}>🔒</span> 
+          <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: '#f1f5f9', border: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '8px' }}>🔒</span> 
             Bloqueado por tarifa
           </span>
         </div>
 
         {/* Airplane Fuselage Scroll Container */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px', display: 'flex', justifyContent: 'center', backgroundColor: '#f8fafc' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', justifyContent: 'center', backgroundColor: '#f8fafc' }}>
           
-          <div style={{ width: '100%', maxWidth: '450px', position: 'relative' }}>
+          <div style={{ width: '100%', maxWidth: '460px', position: 'relative' }}>
             
             {/* Cockpit Indicator */}
             <div style={{
               width: '180px',
-              margin: '0 auto 16px auto',
+              margin: '0 auto 14px auto',
               backgroundColor: 'var(--color-latam-navy)',
               color: '#fff',
               textAlign: 'center',
-              padding: '8px 16px',
+              padding: '6px 16px',
               borderRadius: '24px 24px 8px 8px',
               fontSize: '11px',
               fontWeight: 'bold',
@@ -381,7 +564,7 @@ export default function SeatMapModal({
             </div>
 
             {/* Front Galley & Doors */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 16px', fontSize: '11px', color: '#64748b', fontWeight: 'bold', borderBottom: '1px dashed #cbd5e1', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 16px', fontSize: '10px', color: '#64748b', fontWeight: 'bold', borderBottom: '1px dashed #cbd5e1', marginBottom: '12px' }}>
               <span>🚪 Puerta 1L • 🚻 Baño</span>
               <span>☕ Galley • 🚪 Puerta 1R</span>
             </div>
@@ -392,13 +575,13 @@ export default function SeatMapModal({
               gridTemplateColumns: 'repeat(3, 1fr) 30px repeat(3, 1fr)',
               textAlign: 'center',
               fontWeight: '800',
-              fontSize: '12px',
+              fontSize: '11px',
               color: 'var(--color-latam-navy)',
-              marginBottom: '10px',
+              marginBottom: '8px',
               padding: '0 12px'
             }}>
               <span>A</span><span>B</span><span>C</span>
-              <span style={{ fontSize: '10px', color: '#94a3b8' }}>FILA</span>
+              <span style={{ fontSize: '9px', color: '#94a3b8' }}>FILA</span>
               <span>D</span><span>E</span><span>F</span>
             </div>
 
@@ -408,10 +591,10 @@ export default function SeatMapModal({
                 key={section.id} 
                 style={{
                   backgroundColor: section.isHighlight ? '#f0f9ff' : '#fff',
-                  borderRadius: '16px',
+                  borderRadius: '14px',
                   border: section.isHighlight ? '2px solid #0284c7' : '1px solid #cbd5e1',
-                  padding: '16px 14px',
-                  marginBottom: '20px',
+                  padding: '14px 12px',
+                  marginBottom: '16px',
                   boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
                   position: 'relative'
                 }}
@@ -423,7 +606,7 @@ export default function SeatMapModal({
                       position: 'absolute',
                       top: '20px',
                       left: '-28px',
-                      fontSize: '10px',
+                      fontSize: '9px',
                       fontWeight: 'bold',
                       color: '#b45309',
                       transform: 'rotate(-90deg)',
@@ -431,13 +614,13 @@ export default function SeatMapModal({
                       alignItems: 'center',
                       gap: '4px'
                     }}>
-                      <Plane size={14} /> ALA IZQ
+                      <Plane size={12} /> ALA IZQ
                     </div>
                     <div style={{
                       position: 'absolute',
                       top: '20px',
                       right: '-28px',
-                      fontSize: '10px',
+                      fontSize: '9px',
                       fontWeight: 'bold',
                       color: '#b45309',
                       transform: 'rotate(90deg)',
@@ -445,7 +628,7 @@ export default function SeatMapModal({
                       alignItems: 'center',
                       gap: '4px'
                     }}>
-                      <Plane size={14} /> ALA DER
+                      <Plane size={12} /> ALA DER
                     </div>
                   </>
                 )}
@@ -457,38 +640,130 @@ export default function SeatMapModal({
                   alignItems: 'center',
                   marginBottom: '6px',
                   borderBottom: '1px solid #e2e8f0',
-                  paddingBottom: '8px'
+                  paddingBottom: '6px'
                 }}>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{
-                        fontSize: '10px',
+                        fontSize: '9px',
                         fontWeight: '800',
                         color: section.badgeColor,
                         backgroundColor: section.badgeBg,
-                        padding: '2px 8px',
+                        padding: '2px 6px',
                         borderRadius: '4px'
                       }}>
                         {section.badge}
                       </span>
-                      <strong style={{ fontSize: '13px', color: 'var(--color-latam-navy)' }}>
+                      <strong style={{ fontSize: '12px', color: 'var(--color-latam-navy)' }}>
                         {section.name}
                       </strong>
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
                       {section.tagline} • <span style={{ color: section.isHighlight ? '#0284c7' : '#64748b', fontWeight: section.isHighlight ? 'bold' : 'normal' }}>{section.fareBenefit}</span>
                     </div>
                   </div>
-                  <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569', backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#475569', backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
                     {section.rowsRange}
                   </span>
                 </div>
 
                 {/* Rows inside this section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '8px' }}>
                   {section.rows.map(row => {
                     const isAllowedByFare = isRowAllowedForFare(row.rowNumber);
-                    const restrictionReason = !isAllowedByFare ? getFareRestrictionReason(row.rowNumber) : '';
+                    const isExitRow = row.rowNumber === 11 || row.rowNumber === 12;
+                    const isChildRestrictedOnExit = activePax?.type === 'CHILD' && isExitRow;
+
+                    const renderSeatButton = (col) => {
+                      const seat = row.seats?.find(s => s.seatNumber === `${row.rowNumber}${col}`);
+                      if (!seat) return <div key={col} />;
+                      
+                      const seatNumber = seat.seatNumber;
+                      const isBooked = !seat.isAvailable || locallyBlocked.includes(seatNumber);
+                      const isExtra = seat.characteristics?.includes('EXTRA_LEGROOM');
+
+                      // Check which passenger in our party has this seat:
+                      const assignedPassenger = effectivePaxList.find(p => assignedSeats[p.id] === seatNumber);
+                      const isCurrentPaxSeat = assignedPassenger?.id === activePax?.id;
+                      const isOtherPaxSeat = assignedPassenger && !isCurrentPaxSeat;
+
+                      // Button visual attributes
+                      let bg = '#fff';
+                      let color = '#1e293b';
+                      let border = isExtra ? '2px solid #0284c7' : '1px solid #cbd5e1';
+                      let cursor = 'pointer';
+                      let content = seatNumber;
+
+                      if (isBooked) {
+                        bg = '#94a3b8';
+                        color = '#fff';
+                        border = '1px solid #64748b';
+                        cursor = 'not-allowed';
+                        content = '✕';
+                      } else if (isCurrentPaxSeat) {
+                        bg = 'var(--color-latam-coral)';
+                        color = '#fff';
+                        border = '2px solid #b91c1c';
+                        content = effectivePaxList.length > 1 ? `P${assignedPassenger.index}` : seatNumber;
+                      } else if (isOtherPaxSeat) {
+                        bg = '#001935';
+                        color = '#fff';
+                        border = '2px solid #0a2540';
+                        content = `P${assignedPassenger.index}`;
+                      } else if (!isAllowedByFare) {
+                        bg = '#f1f5f9';
+                        color = '#94a3b8';
+                        border = '1px dashed #cbd5e1';
+                        cursor = 'not-allowed';
+                        content = '🔒';
+                      } else if (isChildRestrictedOnExit) {
+                        bg = '#fef3c7';
+                        color = '#b45309';
+                        border = '1px dashed #f59e0b';
+                        content = '⚠️';
+                      }
+
+                      return (
+                        <button
+                          key={seatNumber}
+                          type="button"
+                          disabled={isBooked}
+                          onClick={() => handleSeatClick(seatNumber, row.rowNumber)}
+                          title={
+                            isBooked
+                              ? `Asiento ${seatNumber} (Ocupado / Reservado)`
+                              : (isCurrentPaxSeat
+                                  ? `Asiento ${seatNumber} (Asignado a Pasajero ${assignedPassenger.index})`
+                                  : (isOtherPaxSeat
+                                      ? `Asiento ${seatNumber} (Asignado a Pasajero ${assignedPassenger.index}) - Haz clic para reasignar`
+                                      : (!isAllowedByFare
+                                          ? `Asiento ${seatNumber} (Bloqueado por tarifa ${fareBrandNorm})`
+                                          : (isChildRestrictedOnExit
+                                              ? `Asiento ${seatNumber} (Bloqueado para niños en fila de emergencia)`
+                                              : `Asiento ${seatNumber} (${col === 'A' || col === 'F' ? 'Ventana' : col === 'C' || col === 'D' ? 'Pasillo' : 'Centro'})`))))
+                          }
+                          style={{
+                            height: '35px',
+                            borderRadius: '7px',
+                            backgroundColor: bg,
+                            color: color,
+                            border: border,
+                            fontSize: '11px',
+                            fontWeight: 'bold',
+                            cursor: cursor,
+                            opacity: (!isAllowedByFare || isChildRestrictedOnExit) && !isBooked ? 0.75 : 1,
+                            position: 'relative',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: (isCurrentPaxSeat || isOtherPaxSeat) ? '0 2px 6px rgba(0,0,0,0.2)' : 'none',
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          {content}
+                        </button>
+                      );
+                    };
 
                     return (
                       <div
@@ -496,154 +771,20 @@ export default function SeatMapModal({
                         style={{
                           display: 'grid',
                           gridTemplateColumns: 'repeat(3, 1fr) 30px repeat(3, 1fr)',
-                          gap: '6px',
+                          gap: '5px',
                           alignItems: 'center'
                         }}
                       >
                         {/* Left Seats: A, B, C */}
-                        {['A', 'B', 'C'].map(col => {
-                          const seat = row.seats?.find(s => s.seatNumber === `${row.rowNumber}${col}`);
-                          if (!seat) return <div key={col} />;
-                          
-                          const isSel = currentSeat === seat.seatNumber;
-                          const isExtra = seat.characteristics?.includes('EXTRA_LEGROOM');
-                          const isBooked = !seat.isAvailable || locallyBlocked.includes(seat.seatNumber);
-
-                          // Click handler
-                          const handleSeatClick = () => {
-                            if (isBooked) return;
-                            if (!isAllowedByFare) {
-                              setFareAlertMessage(restrictionReason);
-                              return;
-                            }
-                            setFareAlertMessage(null);
-                            setCurrentSeat(seat.seatNumber);
-                          };
-
-                          return (
-                            <button
-                              key={seat.seatNumber}
-                              type="button"
-                              disabled={isBooked}
-                              onClick={handleSeatClick}
-                              title={
-                                isBooked
-                                  ? `Asiento ${seat.seatNumber} (Ocupado / Reservado)`
-                                  : (!isAllowedByFare
-                                      ? `Asiento ${seat.seatNumber} (Bloqueado: ${restrictionReason})`
-                                      : `Asiento ${seat.seatNumber} (${col === 'A' ? 'Ventana' : col === 'C' ? 'Pasillo' : 'Centro'})`)
-                              }
-                              style={{
-                                height: '36px',
-                                borderRadius: '7px',
-                                backgroundColor: isSel 
-                                  ? 'var(--color-latam-coral)' 
-                                  : (isBooked 
-                                      ? '#94a3b8' 
-                                      : (!isAllowedByFare ? '#f1f5f9' : '#fff')),
-                                color: isSel 
-                                  ? '#fff' 
-                                  : (isBooked 
-                                      ? '#f1f5f9' 
-                                      : (!isAllowedByFare ? '#94a3b8' : '#1e293b')),
-                                border: isSel 
-                                  ? '2px solid #b91c1c' 
-                                  : (isBooked 
-                                      ? '1px solid #64748b' 
-                                      : (!isAllowedByFare 
-                                          ? '1px dashed #cbd5e1' 
-                                          : (isExtra ? '2px solid #0284c7' : '1px solid #cbd5e1'))),
-                                fontSize: '11px',
-                                fontWeight: 'bold',
-                                cursor: isBooked ? 'not-allowed' : (!isAllowedByFare ? 'not-allowed' : 'pointer'),
-                                opacity: !isAllowedByFare && !isBooked ? 0.75 : 1,
-                                position: 'relative',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                boxShadow: isSel ? '0 2px 8px rgba(232, 17, 75, 0.4)' : (!isBooked && isAllowedByFare ? '0 1px 3px rgba(0,0,0,0.05)' : 'none'),
-                                transition: 'all 0.15s'
-                              }}
-                            >
-                              {isBooked ? '✕' : (!isAllowedByFare ? '🔒' : seat.seatNumber)}
-                            </button>
-                          );
-                        })}
+                        {['A', 'B', 'C'].map(col => renderSeatButton(col))}
 
                         {/* Aisle Number */}
-                        <span style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', fontWeight: 'bold' }}>
+                        <span style={{ fontSize: '10px', color: '#64748b', textAlign: 'center', fontWeight: 'bold' }}>
                           {row.rowNumber}
                         </span>
 
                         {/* Right Seats: D, E, F */}
-                        {['D', 'E', 'F'].map(col => {
-                          const seat = row.seats?.find(s => s.seatNumber === `${row.rowNumber}${col}`);
-                          if (!seat) return <div key={col} />;
-                          
-                          const isSel = currentSeat === seat.seatNumber;
-                          const isExtra = seat.characteristics?.includes('EXTRA_LEGROOM');
-                          const isBooked = !seat.isAvailable || locallyBlocked.includes(seat.seatNumber);
-
-                          // Click handler
-                          const handleSeatClick = () => {
-                            if (isBooked) return;
-                            if (!isAllowedByFare) {
-                              setFareAlertMessage(restrictionReason);
-                              return;
-                            }
-                            setFareAlertMessage(null);
-                            setCurrentSeat(seat.seatNumber);
-                          };
-
-                          return (
-                            <button
-                              key={seat.seatNumber}
-                              type="button"
-                              disabled={isBooked}
-                              onClick={handleSeatClick}
-                              title={
-                                isBooked
-                                  ? `Asiento ${seat.seatNumber} (Ocupado / Reservado)`
-                                  : (!isAllowedByFare
-                                      ? `Asiento ${seat.seatNumber} (Bloqueado: ${restrictionReason})`
-                                      : `Asiento ${seat.seatNumber} (${col === 'F' ? 'Ventana' : col === 'D' ? 'Pasillo' : 'Centro'})`)
-                              }
-                              style={{
-                                height: '36px',
-                                borderRadius: '7px',
-                                backgroundColor: isSel 
-                                  ? 'var(--color-latam-coral)' 
-                                  : (isBooked 
-                                      ? '#94a3b8' 
-                                      : (!isAllowedByFare ? '#f1f5f9' : '#fff')),
-                                color: isSel 
-                                  ? '#fff' 
-                                  : (isBooked 
-                                      ? '#f1f5f9' 
-                                      : (!isAllowedByFare ? '#94a3b8' : '#1e293b')),
-                                border: isSel 
-                                  ? '2px solid #b91c1c' 
-                                  : (isBooked 
-                                      ? '1px solid #64748b' 
-                                      : (!isAllowedByFare 
-                                          ? '1px dashed #cbd5e1' 
-                                          : (isExtra ? '2px solid #0284c7' : '1px solid #cbd5e1'))),
-                                fontSize: '11px',
-                                fontWeight: 'bold',
-                                cursor: isBooked ? 'not-allowed' : (!isAllowedByFare ? 'not-allowed' : 'pointer'),
-                                opacity: !isAllowedByFare && !isBooked ? 0.75 : 1,
-                                position: 'relative',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                boxShadow: isSel ? '0 2px 8px rgba(232, 17, 75, 0.4)' : (!isBooked && isAllowedByFare ? '0 1px 3px rgba(0,0,0,0.05)' : 'none'),
-                                transition: 'all 0.15s'
-                              }}
-                            >
-                              {isBooked ? '✕' : (!isAllowedByFare ? '🔒' : seat.seatNumber)}
-                            </button>
-                          );
-                        })}
+                        {['D', 'E', 'F'].map(col => renderSeatButton(col))}
                       </div>
                     );
                   })}
@@ -652,18 +793,18 @@ export default function SeatMapModal({
             ))}
 
             {/* Rear Service Area */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', fontSize: '11px', color: '#64748b', fontWeight: 'bold', borderTop: '1px dashed #cbd5e1', marginTop: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 16px', fontSize: '10px', color: '#64748b', fontWeight: 'bold', borderTop: '1px dashed #cbd5e1', marginTop: '12px' }}>
               <span>🚪 Puerta 2L • 🚻 Baño</span>
               <span>☕ Aft Galley • 🚪 Puerta 2R</span>
             </div>
 
             <div style={{
               width: '160px',
-              margin: '12px auto 0 auto',
+              margin: '10px auto 0 auto',
               backgroundColor: '#cbd5e1',
               color: '#334155',
               textAlign: 'center',
-              padding: '6px 14px',
+              padding: '5px 14px',
               borderRadius: '8px 8px 18px 18px',
               fontSize: '10px',
               fontWeight: 'bold',
@@ -674,68 +815,69 @@ export default function SeatMapModal({
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer with Summary and Action */}
         <div style={{
-          padding: '16px 24px',
+          padding: '14px 24px',
           borderTop: '1px solid #e2e8f0',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           backgroundColor: '#fff',
-          boxShadow: '0 -4px 12px rgba(0,0,0,0.04)'
+          boxShadow: '0 -4px 12px rgba(0,0,0,0.04)',
+          flexWrap: 'wrap',
+          gap: '12px'
         }}>
           <div>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Asiento Seleccionado ({fareBrandNorm}):</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-              <strong style={{
-                fontSize: '18px',
-                color: currentSeat ? 'var(--color-latam-coral)' : '#94a3b8',
-                backgroundColor: currentSeat ? '#fef2f2' : '#f1f5f9',
-                padding: '2px 10px',
-                borderRadius: '6px',
-                border: currentSeat ? '1px solid #fecaca' : '1px solid #cbd5e1'
-              }}>
-                {currentSeat || 'Ninguno'}
-              </strong>
-              {currentSeat ? (
-                <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 'bold' }}>
-                  ✓ {getSeatDescription(currentSeat)}
-                </span>
-              ) : (
-                <span style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600' }}>
-                  * Haz clic en un asiento disponible para tu tarifa
-                </span>
-              )}
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
+              Asientos Asignados ({totalAssignedCount}/{effectivePaxList.length}):
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+              {effectivePaxList.map(pax => {
+                const seat = assignedSeats[pax.id];
+                return (
+                  <span
+                    key={pax.id}
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: 'bold',
+                      color: seat ? '#065f46' : '#991b1b',
+                      backgroundColor: seat ? '#d1fae5' : '#fee2e2',
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      border: seat ? '1px solid #a7f3d0' : '1px solid #fecaca'
+                    }}
+                  >
+                    P{pax.index} ({pax.type === 'CHILD' ? 'Niño' : 'Adulto'}): {seat ? seat : 'Sin asignar'}
+                  </span>
+                );
+              })}
             </div>
           </div>
 
           <button
             type="button"
-            disabled={!currentSeat}
-            onClick={() => {
-              if (currentSeat) {
-                onSelectSeat(currentSeat);
-                onClose();
-              }
-            }}
+            disabled={!isAllAssigned}
+            onClick={handleConfirm}
             style={{
-              padding: '12px 28px',
+              padding: '12px 24px',
               borderRadius: '8px',
-              backgroundColor: currentSeat ? 'var(--color-latam-coral)' : '#94a3b8',
+              backgroundColor: isAllAssigned ? 'var(--color-latam-coral)' : '#94a3b8',
               color: '#fff',
               fontWeight: '800',
-              fontSize: '14px',
-              cursor: currentSeat ? 'pointer' : 'not-allowed',
-              opacity: currentSeat ? 1 : 0.6,
+              fontSize: '13px',
+              cursor: isAllAssigned ? 'pointer' : 'not-allowed',
+              opacity: isAllAssigned ? 1 : 0.6,
               border: 'none',
-              boxShadow: currentSeat ? '0 4px 12px rgba(232, 17, 75, 0.3)' : 'none',
+              boxShadow: isAllAssigned ? '0 4px 12px rgba(232, 17, 75, 0.3)' : 'none',
               transition: 'all 0.2s',
               display: 'flex',
               alignItems: 'center',
               gap: '6px'
             }}
           >
-            {currentSeat ? `Confirmar Asiento (${currentSeat}) y Continuar ➔` : 'Selecciona un Asiento'}
+            {isAllAssigned 
+              ? `Confirmar Asientos (${effectivePaxList.map(p => assignedSeats[p.id]).join(', ')}) y Continuar ➔` 
+              : `Falta asignar ${effectivePaxList.length - totalAssignedCount} asiento(s)`}
           </button>
         </div>
       </div>

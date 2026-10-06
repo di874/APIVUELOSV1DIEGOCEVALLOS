@@ -72,12 +72,29 @@ export async function getHoldStatus(holdId) {
 }
 
 export async function createBooking(holdId, passengerData, paymentRef) {
-  const body = {
-    holdId,
-    passengers: [
+  let paxList = [];
+  if (Array.isArray(passengerData?.passengers) && passengerData.passengers.length > 0) {
+    paxList = passengerData.passengers.map((p, idx) => ({
+      passengerId: `PAX-${idx + 1}`,
+      passengerType: p.passengerType || p.type || 'ADULT',
+      firstName: p.firstName,
+      lastName: p.lastName,
+      documentType: p.documentType || 'NATIONAL_ID',
+      documentNumber: p.documentNumber,
+      nationality: 'EC',
+      birthDate: p.birthDate || (p.passengerType === 'CHILD' || p.type === 'CHILD' ? '2016-06-15' : '1995-01-01'),
+      gender: p.gender || 'M',
+      contact: {
+        email: p.email || passengerData.contactEmail || 'cliente@aerocache.ec',
+        phone: p.phone || passengerData.contactPhone || '+593991234567'
+      },
+      assignedSeats: p.assignedSeat ? [{ segmentId: 'SEG-1', seatNumber: p.assignedSeat }] : []
+    }));
+  } else {
+    paxList = [
       {
         passengerId: 'PAX-1',
-        passengerType: 'ADULT',
+        passengerType: passengerData.passengerType || 'ADULT',
         firstName: passengerData.firstName,
         lastName: passengerData.lastName,
         documentType: passengerData.documentType || 'NATIONAL_ID',
@@ -86,12 +103,17 @@ export async function createBooking(holdId, passengerData, paymentRef) {
         birthDate: passengerData.birthDate || '1995-01-01',
         gender: passengerData.gender || 'M',
         contact: {
-          email: passengerData.email,
-          phone: passengerData.phone
+          email: passengerData.email || 'cliente@aerocache.ec',
+          phone: passengerData.phone || '+593991234567'
         },
         assignedSeats: passengerData.assignedSeat ? [{ segmentId: 'SEG-1', seatNumber: passengerData.assignedSeat }] : []
       }
-    ],
+    ];
+  }
+
+  const body = {
+    holdId,
+    passengers: paxList,
     payment: {
       paymentReferenceValue: paymentRef || ('PAY-' + Math.random().toString(36).substring(2, 8).toUpperCase())
     }

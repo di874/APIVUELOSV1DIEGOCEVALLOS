@@ -111,6 +111,9 @@ app.UseSwaggerUI(c =>
 
 app.UseCors("AllowAll");
 
+// Redirigir la raíz directamente a la documentación Swagger
+app.MapGet("/", () => Results.Redirect("/swagger"));
+
 app.MapControllers();
 
 app.Run();

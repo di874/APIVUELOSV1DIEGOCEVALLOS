@@ -20,8 +20,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
-ENV ASPNETCORE_URLS=http://+:5200
-ENV ASPNETCORE_ENVIRONMENT=Development
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV PORT=5200
 EXPOSE 5200
 
 ENTRYPOINT ["dotnet", "Aerocache.API.dll"]

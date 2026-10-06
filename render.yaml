@@ -1,0 +1,10 @@
+﻿services:
+  - type: web
+    name: apivuelosv1diegocevallos
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    plan: free
+    region: ohio
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production

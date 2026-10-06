@@ -15,6 +15,13 @@ using Aerocache.DataManagement;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Support dynamic port provided by hosting environments like Render ($PORT)
+var renderPort = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(renderPort))
+{
+    builder.WebHost.UseUrls($"http://+:{renderPort}");
+}
+
 // Add Controllers with CamelCase JSON serializer
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

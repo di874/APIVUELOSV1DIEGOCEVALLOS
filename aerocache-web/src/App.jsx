@@ -103,6 +103,27 @@ export default function App() {
   const handleBookingSuccess = async (booking) => {
     setCheckoutOpen(false);
     setCurrentBooking(booking);
+
+    // Bloquear inmediatamente el asiento confirmado en almacenamiento local persistente
+    try {
+      const flightNum = booking.itineraries?.[0]?.segments?.[0]?.flightNumber 
+        || pendingFare?.segment?.flightNumber 
+        || selectedFare?.segment?.flightNumber;
+      const seat = booking.passengers?.[0]?.assignedSeatNumber || selectedFare?.selectedSeat;
+      
+      if (flightNum && seat) {
+        const stored = JSON.parse(localStorage.getItem('aerocache_blocked_seats') || '{}');
+        const list = stored[flightNum] || [];
+        if (!list.includes(seat)) {
+          list.push(seat);
+        }
+        stored[flightNum] = list;
+        localStorage.setItem('aerocache_blocked_seats', JSON.stringify(stored));
+      }
+    } catch (e) {
+      console.warn('Error al persistir bloqueo de asiento local:', e);
+    }
+
     try {
       // Auto check-in and show boarding pass
       await performCheckIn(booking.bookingId);
@@ -216,6 +237,7 @@ export default function App() {
         selectedSeat={selectedFare?.selectedSeat || selectedSeat}
         flightInfo={pendingFare?.segment?.flightNumber || selectedFare?.segment?.flightNumber}
         isBookingFlow={isBookingFlow}
+        selectedFareBrand={pendingFare?.fareBrand || selectedFare?.fareBrand}
       />
 
       <CheckoutModal

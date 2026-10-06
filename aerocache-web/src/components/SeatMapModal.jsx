@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Plane, Zap, ShieldCheck, Sparkles, Info } from 'lucide-react';
+import { X, Check, Plane, Zap, ShieldCheck, Sparkles, Info, Lock, AlertCircle } from 'lucide-react';
 
 export default function SeatMapModal({ 
   isOpen, 
@@ -12,13 +12,32 @@ export default function SeatMapModal({
   selectedFareBrand 
 }) {
   const [currentSeat, setCurrentSeat] = useState(selectedSeat || '');
-  const [activeSectionFilter, setActiveSectionFilter] = useState('ALL'); // 'ALL' | 'PREMIUM' | 'FORWARD' | 'EXIT' | 'STANDARD'
+  const [activeSectionFilter, setActiveSectionFilter] = useState('ALL');
+  const [fareAlertMessage, setFareAlertMessage] = useState(null);
 
+  const fareBrandNorm = (selectedFareBrand || 'Top').trim();
+  const fareBrandLower = fareBrandNorm.toLowerCase(); // 'top' | 'plus' | 'light'
+
+  // Determine allowed rows and initial tab based on fare brand:
+  // - Top (precio más alto): Asientos Premium (Filas 1 a 3) y acceso completo
+  // - Plus (precio normal/medio): Asientos de la MITAD del avión (Filas 4 a 12), Premium 1-3 bloqueados
+  // - Light (básico/estándar): Asientos de ATRÁS del avión (Filas 13 a 24), Delantera y Media 1-12 bloqueadas
   useEffect(() => {
     if (isOpen) {
       setCurrentSeat(selectedSeat || '');
+      setFareAlertMessage(null);
+
+      if (fareBrandLower === 'top') {
+        setActiveSectionFilter('PREMIUM');
+      } else if (fareBrandLower === 'plus') {
+        setActiveSectionFilter('FORWARD');
+      } else if (fareBrandLower === 'light') {
+        setActiveSectionFilter('STANDARD');
+      } else {
+        setActiveSectionFilter('ALL');
+      }
     }
-  }, [isOpen, selectedSeat]);
+  }, [isOpen, selectedSeat, fareBrandLower]);
 
   if (!isOpen || !seatMapData) return null;
 
@@ -35,8 +54,8 @@ export default function SeatMapModal({
       badgeColor: '#1d4ed8',
       badgeBg: '#dbeafe',
       tagline: 'Mayor espacio para piernas (34") • Desembarque prioritario',
-      fareBenefit: '⭐ Recomendada especialmente para tarifa TOP',
-      isHighlight: selectedFareBrand === 'Top',
+      fareBenefit: '⭐ Exclusivo para tarifa TOP (Precio más alto)',
+      isHighlight: fareBrandLower === 'top',
       rows: allRows.filter(r => r.rowNumber >= 1 && r.rowNumber <= 3)
     },
     {
@@ -46,9 +65,9 @@ export default function SeatMapModal({
       badge: 'SALIDA RÁPIDA',
       badgeColor: '#0369a1',
       badgeBg: '#e0f2fe',
-      tagline: 'Filas preferentes delanteras para un desembarque ágil',
-      fareBenefit: 'Excelente para tarifas PLUS y TOP',
-      isHighlight: selectedFareBrand === 'Plus',
+      tagline: 'Filas preferentes de la mitad delantera para un desembarque ágil',
+      fareBenefit: 'Habilitado para tarifa PLUS y TOP',
+      isHighlight: fareBrandLower === 'plus',
       rows: allRows.filter(r => r.rowNumber >= 4 && r.rowNumber <= 10)
     },
     {
@@ -58,8 +77,8 @@ export default function SeatMapModal({
       badge: 'MAYOR ESPACIO (ALAS)',
       badgeColor: '#b45309',
       badgeBg: '#fef3c7',
-      tagline: '⚡ Espacio extra para estirar las piernas sobre las alas',
-      fareBenefit: 'Asientos sobre el ala del Airbus A320',
+      tagline: '⚡ Espacio extra para estirar las piernas sobre las alas (Mitad)',
+      fareBenefit: 'Asientos sobre el ala del Airbus A320 (PLUS y TOP)',
       hasWings: true,
       rows: allRows.filter(r => r.rowNumber >= 11 && r.rowNumber <= 12)
     },
@@ -67,11 +86,12 @@ export default function SeatMapModal({
       id: 'STANDARD',
       name: 'Sección 4: Economy Estándar',
       rowsRange: 'Filas 13 a 24',
-      badge: 'CABINA PRINCIPAL',
+      badge: 'SECCIÓN TRASERA',
       badgeColor: '#475569',
       badgeBg: '#f1f5f9',
-      tagline: 'Cabina principal espaciosa • Confort para todas las tarifas',
-      fareBenefit: 'Disponible para tarifas LIGHT, PLUS y TOP',
+      tagline: 'Cabina espaciosa trasera • Incluida en tarifa básica LIGHT',
+      fareBenefit: 'Habilitado para tarifas LIGHT, PLUS y TOP',
+      isHighlight: fareBrandLower === 'light',
       rows: allRows.filter(r => r.rowNumber >= 13 && r.rowNumber <= 24)
     }
   ];
@@ -79,6 +99,45 @@ export default function SeatMapModal({
   const filteredSections = activeSectionFilter === 'ALL' 
     ? sections 
     : sections.filter(s => s.id === activeSectionFilter);
+
+  // Check persistent locally blocked seats for confirmed bookings
+  const getLocallyBlockedSeats = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('aerocache_blocked_seats') || '{}');
+      const list = stored[flightInfo] || [];
+      return Array.isArray(list) ? list : [];
+    } catch {
+      return [];
+    }
+  };
+  const locallyBlocked = getLocallyBlockedSeats();
+
+  // Class restriction logic based on selected fare:
+  const isRowAllowedForFare = (rowNumber) => {
+    if (fareBrandLower === 'top') {
+      // Top (precio más alto): Libre acceso a todo el avión, enfocado en Premium
+      return true;
+    }
+    if (fareBrandLower === 'plus') {
+      // Plus (normal): Asientos de la mitad del avión (4-12) y estándar (13-24). Premium (1-3) bloqueado
+      return rowNumber >= 4;
+    }
+    if (fareBrandLower === 'light') {
+      // Light (básico/estándar): Solo sección trasera (13-24). Delantera y media (1-12) bloqueadas
+      return rowNumber >= 13;
+    }
+    return true;
+  };
+
+  const getFareRestrictionReason = (rowNumber) => {
+    if (rowNumber <= 3) {
+      return `El asiento pertenece a la clase Premium (Filas 1-3). Es exclusivo para pasajeros con tarifa TOP (Precio más alto).`;
+    }
+    if (rowNumber <= 12) {
+      return `El asiento está en la mitad delantera del avión (Filas 4-12). Tu tarifa actual es LIGHT básica; requiere tarifa PLUS o TOP.`;
+    }
+    return '';
+  };
 
   // Helper to get description of chosen seat
   const getSeatDescription = (seatNum) => {
@@ -91,10 +150,10 @@ export default function SeatMapModal({
     const isAisle = col === 'C' || col === 'D';
     const loc = isWindow ? 'Ventana' : (isAisle ? 'Pasillo' : 'Centro');
     
-    let secName = 'Economy Estándar';
-    if (row <= 3) secName = 'Premium Economy (Extra Legroom)';
-    else if (row <= 10) secName = 'Economy Delantera';
-    else if (row <= 12) secName = 'Salida de Emergencia (Extra Legroom)';
+    let secName = 'Economy Estándar (Atrás)';
+    if (row <= 3) secName = 'Premium Economy (Filas 1-3)';
+    else if (row <= 10) secName = 'Economy Delantera (Filas 4-10)';
+    else if (row <= 12) secName = 'Salida de Emergencia / Alas (Filas 11-12)';
     
     return `${seatNum} • Fila ${row} • ${loc} • ${secName}`;
   };
@@ -117,7 +176,7 @@ export default function SeatMapModal({
         backgroundColor: '#fff',
         borderRadius: '20px',
         width: '100%',
-        maxWidth: '720px',
+        maxWidth: '740px',
         maxHeight: '92vh',
         display: 'flex',
         flexDirection: 'column',
@@ -143,14 +202,90 @@ export default function SeatMapModal({
             </div>
             <div style={{ fontSize: '12px', color: '#9bb1c9', marginTop: '4px' }}>
               {flightInfo ? `Vuelo ${flightInfo} • ` : ''}
-              {selectedFareBrand ? `Tarifa seleccionada: ${selectedFareBrand} • ` : ''}
-              Elige tu asiento por secciones antes de confirmar tu reserva
+              Tarifa seleccionada: <strong style={{ color: '#fff' }}>{fareBrandNorm.toUpperCase()}</strong> • 
+              Asientos asignados según tu clase de tarifa
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}>
             <X size={24} />
           </button>
         </div>
+
+        {/* Fare Class Notification Banner */}
+        <div style={{
+          padding: '10px 20px',
+          backgroundColor: fareBrandLower === 'top' ? '#eff6ff' : (fareBrandLower === 'plus' ? '#f0fdf4' : '#f8fafc'),
+          borderBottom: '1px solid #e2e8f0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+            {fareBrandLower === 'top' && (
+              <>
+                <span style={{ fontSize: '14px' }}>👑</span>
+                <span style={{ color: '#1e40af', fontWeight: '600' }}>
+                  <strong>Tarifa TOP (Precio más alto):</strong> Tienes acceso a los asientos <strong>PREMIUM (Filas 1 a 3)</strong> con mayor reclinación y espacio para piernas.
+                </span>
+              </>
+            )}
+            {fareBrandLower === 'plus' && (
+              <>
+                <span style={{ fontSize: '14px' }}>⚡</span>
+                <span style={{ color: '#166534', fontWeight: '600' }}>
+                  <strong>Tarifa PLUS (Normal / Medio):</strong> Asientos habilitados en la <strong>MITAD del avión (Filas 4 a 12)</strong>. Filas 1-3 Premium reservadas para Top.
+                </span>
+              </>
+            )}
+            {fareBrandLower === 'light' && (
+              <>
+                <span style={{ fontSize: '14px' }}>💺</span>
+                <span style={{ color: '#475569', fontWeight: '600' }}>
+                  <strong>Tarifa LIGHT (Básica / Menor precio):</strong> Asientos habilitados en la <strong>sección de ATRÁS (Filas 13 a 24)</strong>. Filas 1-12 requieren Plus o Top.
+                </span>
+              </>
+            )}
+          </div>
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 'bold',
+            padding: '3px 8px',
+            borderRadius: '6px',
+            backgroundColor: fareBrandLower === 'top' ? '#dbeafe' : (fareBrandLower === 'plus' ? '#dcfce7' : '#e2e8f0'),
+            color: fareBrandLower === 'top' ? '#1d4ed8' : (fareBrandLower === 'plus' ? '#15803d' : '#334155'),
+            whiteSpace: 'nowrap'
+          }}>
+            Tarifa {fareBrandNorm}
+          </span>
+        </div>
+
+        {/* Dynamic Alert Banner when clicking a restricted seat */}
+        {fareAlertMessage && (
+          <div style={{
+            padding: '10px 20px',
+            backgroundColor: '#fef2f2',
+            borderBottom: '1px solid #fecaca',
+            color: '#b91c1c',
+            fontSize: '12px',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            animation: 'fadeIn 0.2s ease-in'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Lock size={15} color="#b91c1c" />
+              <span>{fareAlertMessage}</span>
+            </div>
+            <button 
+              onClick={() => setFareAlertMessage(null)} 
+              style={{ background: 'transparent', border: 'none', color: '#b91c1c', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Section Navigation Tabs */}
         <div style={{
@@ -167,10 +302,10 @@ export default function SeatMapModal({
           </span>
           {[
             { id: 'ALL', label: 'Todo el Avión (1-24)' },
-            { id: 'PREMIUM', label: '1. Premium (1-3)' },
-            { id: 'FORWARD', label: '2. Delantera (4-10)' },
-            { id: 'EXIT', label: '3. Emergencia (11-12)' },
-            { id: 'STANDARD', label: '4. Estándar (13-24)' }
+            { id: 'PREMIUM', label: '👑 1. Premium (1-3)' },
+            { id: 'FORWARD', label: '⚡ 2. Mitad Delantera (4-10)' },
+            { id: 'EXIT', label: '🚪 3. Emergencia / Alas (11-12)' },
+            { id: 'STANDARD', label: '💺 4. Atrás Estándar (13-24)' }
           ].map(tab => (
             <button
               key={tab.id}
@@ -198,7 +333,7 @@ export default function SeatMapModal({
           display: 'flex',
           justifyContent: 'center',
           gap: '16px',
-          padding: '10px',
+          padding: '8px 12px',
           backgroundColor: '#fff',
           borderBottom: '1px solid #e2e8f0',
           fontSize: '11px',
@@ -206,23 +341,27 @@ export default function SeatMapModal({
           flexWrap: 'wrap'
         }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: '#fff', border: '1px solid #cbd5e1', display: 'inline-block' }} /> Disponible
+            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: '#fff', border: '1px solid #cbd5e1', display: 'inline-block' }} /> 
+            Disponible para tu tarifa
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: 'var(--color-latam-coral)', display: 'inline-block' }} /> Seleccionado
+            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: 'var(--color-latam-coral)', display: 'inline-block' }} /> 
+            Seleccionado
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: '#94a3b8', display: 'inline-block' }} /> Ocupado (No disponible)
+            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '9px', fontWeight: 'bold' }}>✕</span> 
+            Ocupado / Reservado
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '14px', height: '14px', borderRadius: '4px', border: '2px solid #3b82f6', display: 'inline-block' }} /> Extra Legroom
+            <span style={{ width: '14px', height: '14px', borderRadius: '4px', backgroundColor: '#f1f5f9', border: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '9px' }}>🔒</span> 
+            Bloqueado por tarifa
           </span>
         </div>
 
         {/* Airplane Fuselage Scroll Container */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 16px', display: 'flex', justifyContent: 'center', backgroundColor: '#f8fafc' }}>
           
-          <div style={{ width: '100%', maxWidth: '440px', position: 'relative' }}>
+          <div style={{ width: '100%', maxWidth: '450px', position: 'relative' }}>
             
             {/* Cockpit Indicator */}
             <div style={{
@@ -268,9 +407,9 @@ export default function SeatMapModal({
               <div 
                 key={section.id} 
                 style={{
-                  backgroundColor: section.isHighlight ? '#eff6ff' : '#fff',
+                  backgroundColor: section.isHighlight ? '#f0f9ff' : '#fff',
                   borderRadius: '16px',
-                  border: section.isHighlight ? '2px solid #3b82f6' : '1px solid #cbd5e1',
+                  border: section.isHighlight ? '2px solid #0284c7' : '1px solid #cbd5e1',
                   padding: '16px 14px',
                   marginBottom: '20px',
                   boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
@@ -337,7 +476,7 @@ export default function SeatMapModal({
                       </strong>
                     </div>
                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                      {section.tagline}
+                      {section.tagline} • <span style={{ color: section.isHighlight ? '#0284c7' : '#64748b', fontWeight: section.isHighlight ? 'bold' : 'normal' }}>{section.fareBenefit}</span>
                     </div>
                   </div>
                   <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569', backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '6px' }}>
@@ -347,102 +486,167 @@ export default function SeatMapModal({
 
                 {/* Rows inside this section */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
-                  {section.rows.map(row => (
-                    <div
-                      key={row.rowNumber}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(3, 1fr) 30px repeat(3, 1fr)',
-                        gap: '6px',
-                        alignItems: 'center'
-                      }}
-                    >
-                      {/* Left Seats: A, B, C */}
-                      {['A', 'B', 'C'].map(col => {
-                        const seat = row.seats?.find(s => s.seatNumber === `${row.rowNumber}${col}`);
-                        if (!seat) return <div key={col} />;
-                        const isSel = currentSeat === seat.seatNumber;
-                        const isExtra = seat.characteristics?.includes('EXTRA_LEGROOM');
-                        
-                        return (
-                          <button
-                            key={seat.seatNumber}
-                            type="button"
-                            disabled={!seat.isAvailable}
-                            onClick={() => setCurrentSeat(seat.seatNumber)}
-                            title={seat.isAvailable ? `Asiento ${seat.seatNumber} (${col === 'A' ? 'Ventana' : col === 'C' ? 'Pasillo' : 'Centro'})` : `Asiento ${seat.seatNumber} (Ocupado)`}
-                            style={{
-                              height: '36px',
-                              borderRadius: '7px',
-                              backgroundColor: isSel ? 'var(--color-latam-coral)' : (seat.isAvailable ? '#fff' : '#cbd5e1'),
-                              color: isSel ? '#fff' : (seat.isAvailable ? '#1e293b' : '#64748b'),
-                              border: isSel 
-                                ? '2px solid #b91c1c' 
-                                : isExtra 
-                                  ? '2px solid #3b82f6' 
-                                  : (seat.isAvailable ? '1px solid #cbd5e1' : '1px solid #94a3b8'),
-                              fontSize: '11px',
-                              fontWeight: 'bold',
-                              cursor: seat.isAvailable ? 'pointer' : 'not-allowed',
-                              position: 'relative',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              boxShadow: isSel ? '0 2px 8px rgba(232, 17, 75, 0.4)' : (seat.isAvailable ? '0 1px 3px rgba(0,0,0,0.05)' : 'none'),
-                              transition: 'all 0.15s'
-                            }}
-                          >
-                            {seat.isAvailable ? seat.seatNumber : '✕'}
-                          </button>
-                        );
-                      })}
+                  {section.rows.map(row => {
+                    const isAllowedByFare = isRowAllowedForFare(row.rowNumber);
+                    const restrictionReason = !isAllowedByFare ? getFareRestrictionReason(row.rowNumber) : '';
 
-                      {/* Aisle Number */}
-                      <span style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', fontWeight: 'bold' }}>
-                        {row.rowNumber}
-                      </span>
+                    return (
+                      <div
+                        key={row.rowNumber}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(3, 1fr) 30px repeat(3, 1fr)',
+                          gap: '6px',
+                          alignItems: 'center'
+                        }}
+                      >
+                        {/* Left Seats: A, B, C */}
+                        {['A', 'B', 'C'].map(col => {
+                          const seat = row.seats?.find(s => s.seatNumber === `${row.rowNumber}${col}`);
+                          if (!seat) return <div key={col} />;
+                          
+                          const isSel = currentSeat === seat.seatNumber;
+                          const isExtra = seat.characteristics?.includes('EXTRA_LEGROOM');
+                          const isBooked = !seat.isAvailable || locallyBlocked.includes(seat.seatNumber);
 
-                      {/* Right Seats: D, E, F */}
-                      {['D', 'E', 'F'].map(col => {
-                        const seat = row.seats?.find(s => s.seatNumber === `${row.rowNumber}${col}`);
-                        if (!seat) return <div key={col} />;
-                        const isSel = currentSeat === seat.seatNumber;
-                        const isExtra = seat.characteristics?.includes('EXTRA_LEGROOM');
-                        
-                        return (
-                          <button
-                            key={seat.seatNumber}
-                            type="button"
-                            disabled={!seat.isAvailable}
-                            onClick={() => setCurrentSeat(seat.seatNumber)}
-                            title={seat.isAvailable ? `Asiento ${seat.seatNumber} (${col === 'F' ? 'Ventana' : col === 'D' ? 'Pasillo' : 'Centro'})` : `Asiento ${seat.seatNumber} (Ocupado)`}
-                            style={{
-                              height: '36px',
-                              borderRadius: '7px',
-                              backgroundColor: isSel ? 'var(--color-latam-coral)' : (seat.isAvailable ? '#fff' : '#cbd5e1'),
-                              color: isSel ? '#fff' : (seat.isAvailable ? '#1e293b' : '#64748b'),
-                              border: isSel 
-                                ? '2px solid #b91c1c' 
-                                : isExtra 
-                                  ? '2px solid #3b82f6' 
-                                  : (seat.isAvailable ? '1px solid #cbd5e1' : '1px solid #94a3b8'),
-                              fontSize: '11px',
-                              fontWeight: 'bold',
-                              cursor: seat.isAvailable ? 'pointer' : 'not-allowed',
-                              position: 'relative',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              boxShadow: isSel ? '0 2px 8px rgba(232, 17, 75, 0.4)' : (seat.isAvailable ? '0 1px 3px rgba(0,0,0,0.05)' : 'none'),
-                              transition: 'all 0.15s'
-                            }}
-                          >
-                            {seat.isAvailable ? seat.seatNumber : '✕'}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
+                          // Click handler
+                          const handleSeatClick = () => {
+                            if (isBooked) return;
+                            if (!isAllowedByFare) {
+                              setFareAlertMessage(restrictionReason);
+                              return;
+                            }
+                            setFareAlertMessage(null);
+                            setCurrentSeat(seat.seatNumber);
+                          };
+
+                          return (
+                            <button
+                              key={seat.seatNumber}
+                              type="button"
+                              disabled={isBooked}
+                              onClick={handleSeatClick}
+                              title={
+                                isBooked
+                                  ? `Asiento ${seat.seatNumber} (Ocupado / Reservado)`
+                                  : (!isAllowedByFare
+                                      ? `Asiento ${seat.seatNumber} (Bloqueado: ${restrictionReason})`
+                                      : `Asiento ${seat.seatNumber} (${col === 'A' ? 'Ventana' : col === 'C' ? 'Pasillo' : 'Centro'})`)
+                              }
+                              style={{
+                                height: '36px',
+                                borderRadius: '7px',
+                                backgroundColor: isSel 
+                                  ? 'var(--color-latam-coral)' 
+                                  : (isBooked 
+                                      ? '#94a3b8' 
+                                      : (!isAllowedByFare ? '#f1f5f9' : '#fff')),
+                                color: isSel 
+                                  ? '#fff' 
+                                  : (isBooked 
+                                      ? '#f1f5f9' 
+                                      : (!isAllowedByFare ? '#94a3b8' : '#1e293b')),
+                                border: isSel 
+                                  ? '2px solid #b91c1c' 
+                                  : (isBooked 
+                                      ? '1px solid #64748b' 
+                                      : (!isAllowedByFare 
+                                          ? '1px dashed #cbd5e1' 
+                                          : (isExtra ? '2px solid #0284c7' : '1px solid #cbd5e1'))),
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                cursor: isBooked ? 'not-allowed' : (!isAllowedByFare ? 'not-allowed' : 'pointer'),
+                                opacity: !isAllowedByFare && !isBooked ? 0.75 : 1,
+                                position: 'relative',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                boxShadow: isSel ? '0 2px 8px rgba(232, 17, 75, 0.4)' : (!isBooked && isAllowedByFare ? '0 1px 3px rgba(0,0,0,0.05)' : 'none'),
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              {isBooked ? '✕' : (!isAllowedByFare ? '🔒' : seat.seatNumber)}
+                            </button>
+                          );
+                        })}
+
+                        {/* Aisle Number */}
+                        <span style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', fontWeight: 'bold' }}>
+                          {row.rowNumber}
+                        </span>
+
+                        {/* Right Seats: D, E, F */}
+                        {['D', 'E', 'F'].map(col => {
+                          const seat = row.seats?.find(s => s.seatNumber === `${row.rowNumber}${col}`);
+                          if (!seat) return <div key={col} />;
+                          
+                          const isSel = currentSeat === seat.seatNumber;
+                          const isExtra = seat.characteristics?.includes('EXTRA_LEGROOM');
+                          const isBooked = !seat.isAvailable || locallyBlocked.includes(seat.seatNumber);
+
+                          // Click handler
+                          const handleSeatClick = () => {
+                            if (isBooked) return;
+                            if (!isAllowedByFare) {
+                              setFareAlertMessage(restrictionReason);
+                              return;
+                            }
+                            setFareAlertMessage(null);
+                            setCurrentSeat(seat.seatNumber);
+                          };
+
+                          return (
+                            <button
+                              key={seat.seatNumber}
+                              type="button"
+                              disabled={isBooked}
+                              onClick={handleSeatClick}
+                              title={
+                                isBooked
+                                  ? `Asiento ${seat.seatNumber} (Ocupado / Reservado)`
+                                  : (!isAllowedByFare
+                                      ? `Asiento ${seat.seatNumber} (Bloqueado: ${restrictionReason})`
+                                      : `Asiento ${seat.seatNumber} (${col === 'F' ? 'Ventana' : col === 'D' ? 'Pasillo' : 'Centro'})`)
+                              }
+                              style={{
+                                height: '36px',
+                                borderRadius: '7px',
+                                backgroundColor: isSel 
+                                  ? 'var(--color-latam-coral)' 
+                                  : (isBooked 
+                                      ? '#94a3b8' 
+                                      : (!isAllowedByFare ? '#f1f5f9' : '#fff')),
+                                color: isSel 
+                                  ? '#fff' 
+                                  : (isBooked 
+                                      ? '#f1f5f9' 
+                                      : (!isAllowedByFare ? '#94a3b8' : '#1e293b')),
+                                border: isSel 
+                                  ? '2px solid #b91c1c' 
+                                  : (isBooked 
+                                      ? '1px solid #64748b' 
+                                      : (!isAllowedByFare 
+                                          ? '1px dashed #cbd5e1' 
+                                          : (isExtra ? '2px solid #0284c7' : '1px solid #cbd5e1'))),
+                                fontSize: '11px',
+                                fontWeight: 'bold',
+                                cursor: isBooked ? 'not-allowed' : (!isAllowedByFare ? 'not-allowed' : 'pointer'),
+                                opacity: !isAllowedByFare && !isBooked ? 0.75 : 1,
+                                position: 'relative',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                boxShadow: isSel ? '0 2px 8px rgba(232, 17, 75, 0.4)' : (!isBooked && isAllowedByFare ? '0 1px 3px rgba(0,0,0,0.05)' : 'none'),
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              {isBooked ? '✕' : (!isAllowedByFare ? '🔒' : seat.seatNumber)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -465,7 +669,7 @@ export default function SeatMapModal({
               fontWeight: 'bold',
               letterSpacing: '1px'
             }}>
-              ▼ COLA DEL AVIÓN
+              ▼ COLA DEL AVIÓN (SECCIÓN TRASERA)
             </div>
           </div>
         </div>
@@ -481,7 +685,7 @@ export default function SeatMapModal({
           boxShadow: '0 -4px 12px rgba(0,0,0,0.04)'
         }}>
           <div>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Asiento Seleccionado:</div>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>Asiento Seleccionado ({fareBrandNorm}):</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
               <strong style={{
                 fontSize: '18px',
@@ -499,7 +703,7 @@ export default function SeatMapModal({
                 </span>
               ) : (
                 <span style={{ fontSize: '12px', color: '#dc2626', fontWeight: '600' }}>
-                  * Haz clic en cualquier asiento disponible
+                  * Haz clic en un asiento disponible para tu tarifa
                 </span>
               )}
             </div>

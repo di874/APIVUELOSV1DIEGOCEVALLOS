@@ -77,4 +77,47 @@ namespace Aerocache.Business.DTOs
         public string Name { get; set; } = string.Empty;
         public string Airport { get; set; } = string.Empty;
     }
+
+    public class RouteItemDto
+    {
+        public string RouteKey { get; set; } = string.Empty; // e.g. "UIO-GYE"
+        public string OriginIata { get; set; } = string.Empty;
+        public string OriginCity { get; set; } = string.Empty;
+        public string DestinationIata { get; set; } = string.Empty;
+        public string DestinationCity { get; set; } = string.Empty;
+        public string AirportName { get; set; } = string.Empty;
+        public int DurationMinutes { get; set; }
+        public decimal BasePrice { get; set; }
+        public decimal PriceLight { get; set; }
+        public decimal PricePlus { get; set; }
+        public decimal PriceTop { get; set; }
+        public int FlightsCount { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+
+    public class CreateRouteRequest
+    {
+        public string OriginIata { get; set; } = string.Empty;
+        public string? OriginCity { get; set; }
+        public string DestinationIata { get; set; } = string.Empty;
+        public string? DestinationCity { get; set; }
+        public string? AirportName { get; set; }
+        public int DurationMinutes { get; set; } = 50;
+        public decimal BasePrice { get; set; } = 49.00m;
+        public decimal? PriceLight { get; set; }
+        public decimal? PricePlus { get; set; }
+        public decimal? PriceTop { get; set; }
+        public string? InitialFlightNumber { get; set; }
+    }
+
+    public class UpdateRouteRequest
+    {
+        public string? DestinationCity { get; set; }
+        public string? AirportName { get; set; }
+        public int DurationMinutes { get; set; }
+        public decimal BasePrice { get; set; }
+        public decimal? PriceLight { get; set; }
+        public decimal? PricePlus { get; set; }
+        public decimal? PriceTop { get; set; }
+    }
 }

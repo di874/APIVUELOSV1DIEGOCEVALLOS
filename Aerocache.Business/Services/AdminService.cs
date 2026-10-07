@@ -387,5 +387,309 @@ namespace Aerocache.Business.Services
 
             return result.OrderBy(d => d.Code == "UIO" ? 0 : d.Code == "GYE" ? 1 : d.Code == "CUE" ? 2 : 3).ThenBy(d => d.Name).ToList();
         }
+
+        public async Task<List<RouteItemDto>> GetRoutesAsync()
+        {
+            var knownNames = new Dictionary<string, (string Name, string Airport)>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["UIO"] = ("Quito", "Aeropuerto Internacional Mariscal Sucre (UIO)"),
+                ["GYE"] = ("Guayaquil", "Aeropuerto José Joaquín de Olmedo (GYE)"),
+                ["CUE"] = ("Cuenca", "Aeropuerto Mariscal La Mar (CUE)"),
+                ["GPS"] = ("Galápagos (Baltra)", "Aeropuerto Seymour de Baltra (GPS)"),
+                ["SCY"] = ("San Cristóbal (Galápagos)", "Aeropuerto de San Cristóbal (SCY)"),
+                ["MEC"] = ("Manta", "Aeropuerto Eloy Alfaro (MEC)"),
+                ["LOH"] = ("Loja (Catamayo)", "Aeropuerto Ciudad de Catamayo (LOH)"),
+                ["ETR"] = ("Santa Rosa (Machala)", "Aeropuerto Regional de Santa Rosa (ETR)"),
+                ["OCC"] = ("Coca (Francisco de Orellana)", "Aeropuerto Francisco de Orellana (OCC)"),
+                ["ESM"] = ("Esmeraldas", "Aeropuerto General Rivadeneira (ESM)"),
+                ["BOG"] = ("Bogotá", "Aeropuerto El Dorado (BOG)")
+            };
+
+            var flights = await _uow.Vuelos.Query()
+                .Include(f => f.TarifasCabina)
+                .Where(f => f.Estado != "CANCELLED")
+                .ToListAsync();
+
+            var grouped = flights.GroupBy(f => $"{f.OrigenIata}-{f.DestinoIata}");
+            var result = new List<RouteItemDto>();
+
+            foreach (var g in grouped)
+            {
+                var f0 = g.First();
+                var origin = f0.OrigenIata;
+                var dest = f0.DestinoIata;
+
+                string originCity = knownNames.TryGetValue(origin, out var oInfo) ? oInfo.Name : origin;
+                string destCity = knownNames.TryGetValue(dest, out var dInfo) ? dInfo.Name : dest;
+                string airport = knownNames.TryGetValue(dest, out var dAir) ? dAir.Airport : $"Aeropuerto de {dest} ({dest})";
+
+                decimal basePrice = g.SelectMany(f => f.TarifasCabina).Where(t => t.MarcaTarifa == "BASIC" || t.MarcaTarifa == "Light").Select(t => t.TarifaBase).FirstOrDefault();
+                if (basePrice <= 0) basePrice = 45.00m;
+
+                decimal priceLight = g.SelectMany(f => f.TarifasCabina).Where(t => t.MarcaTarifa == "BASIC" || t.MarcaTarifa == "Light").Select(t => t.PrecioTotal).FirstOrDefault();
+                if (priceLight <= 0) priceLight = Math.Round(basePrice * 1.15m + 5.0m, 2);
+
+                decimal pricePlus = g.SelectMany(f => f.TarifasCabina).Where(t => t.MarcaTarifa == "PLUS" || t.MarcaTarifa == "Plus").Select(t => t.PrecioTotal).FirstOrDefault();
+                if (pricePlus <= 0) pricePlus = Math.Round(basePrice * 1.35m * 1.15m + 5.0m, 2);
+
+                decimal priceTop = g.SelectMany(f => f.TarifasCabina).Where(t => t.MarcaTarifa == "TOP" || t.MarcaTarifa == "Top").Select(t => t.PrecioTotal).FirstOrDefault();
+                if (priceTop <= 0) priceTop = Math.Round(basePrice * 1.85m * 1.15m + 5.0m, 2);
+
+                result.Add(new RouteItemDto
+                {
+                    RouteKey = g.Key,
+                    OriginIata = origin,
+                    OriginCity = originCity,
+                    DestinationIata = dest,
+                    DestinationCity = destCity,
+                    AirportName = airport,
+                    DurationMinutes = f0.DuracionMinutos > 0 ? f0.DuracionMinutos : 50,
+                    BasePrice = basePrice,
+                    PriceLight = priceLight,
+                    PricePlus = pricePlus,
+                    PriceTop = priceTop,
+                    FlightsCount = g.Count(),
+                    IsActive = true
+                });
+            }
+
+            return result.OrderByDescending(r => r.FlightsCount).ToList();
+        }
+
+        public async Task<RouteItemDto> CreateRouteAsync(CreateRouteRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.OriginIata) || string.IsNullOrWhiteSpace(request.DestinationIata))
+            {
+                throw new AerocacheProblemException(400, "VALIDATION_FAILED", "Origen y destino IATA son obligatorios.");
+            }
+
+            var origin = request.OriginIata.Trim().ToUpperInvariant();
+            var dest = request.DestinationIata.Trim().ToUpperInvariant();
+
+            if (origin == dest)
+            {
+                throw new AerocacheProblemException(400, "VALIDATION_FAILED", "El origen y el destino no pueden ser iguales.");
+            }
+
+            decimal basePrice = request.BasePrice > 0 ? request.BasePrice : 45.00m;
+            decimal pLight = request.PriceLight ?? Math.Round(basePrice + (basePrice * 0.15m + 5.0m), 2);
+            decimal pPlus = request.PricePlus ?? Math.Round(basePrice * 1.35m + (basePrice * 1.35m * 0.15m + 5.0m), 2);
+            decimal pTop = request.PriceTop ?? Math.Round(basePrice * 1.85m + (basePrice * 1.85m * 0.15m + 5.0m), 2);
+            int duration = request.DurationMinutes > 0 ? request.DurationMinutes : 50;
+
+            // Generate 2 flights for this new route
+            var random = new Random();
+            var flightHours = new[] { 8, 16 };
+
+            for (int i = 0; i < 2; i++)
+            {
+                string flightNum = string.IsNullOrWhiteSpace(request.InitialFlightNumber) || i > 0
+                    ? $"AC{random.Next(1600, 1999)}"
+                    : request.InitialFlightNumber.Trim().ToUpperInvariant();
+
+                var dep = DateTime.UtcNow.Date.AddDays(1).AddHours(flightHours[i]).AddMinutes(30);
+                var arr = dep.AddMinutes(duration);
+
+                var flight = new Vuelo
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    NumeroVuelo = flightNum,
+                    AerolineaComercial = "AC",
+                    AerolineaOperadora = "AC",
+                    NombreAerolinea = "AEROCACHE",
+                    Aeronave = "Airbus A320",
+                    OrigenIata = origin,
+                    DestinoIata = dest,
+                    SalidaProgramada = dep,
+                    LlegadaProgramada = arr,
+                    SalidaEstimada = dep,
+                    LlegadaEstimada = arr,
+                    DuracionMinutos = duration,
+                    TerminalSalida = "T1",
+                    TerminalLlegada = "T1",
+                    Estado = "SCHEDULED"
+                };
+
+                flight.TarifasCabina.Add(new TarifaCabina
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    VueloId = flight.Id,
+                    ClaseCabina = "ECONOMY",
+                    MarcaTarifa = "BASIC",
+                    AsientosDisponibles = 60,
+                    TarifaBase = basePrice,
+                    Impuestos = Math.Round(basePrice * 0.15m + 5.0m, 2),
+                    PrecioTotal = pLight,
+                    Moneda = "USD",
+                    EsReembolsable = false,
+                    PermiteCambios = false,
+                    ArticuloPersonalIncluido = true,
+                    EquipajeManoIncluido = 0,
+                    EquipajeBodegaIncluido = 0,
+                    PrecioEquipajeAdicional = 25.00m
+                });
+
+                flight.TarifasCabina.Add(new TarifaCabina
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    VueloId = flight.Id,
+                    ClaseCabina = "ECONOMY",
+                    MarcaTarifa = "PLUS",
+                    AsientosDisponibles = 50,
+                    TarifaBase = Math.Round(basePrice * 1.35m, 2),
+                    Impuestos = Math.Round(basePrice * 1.35m * 0.15m + 5.0m, 2),
+                    PrecioTotal = pPlus,
+                    Moneda = "USD",
+                    EsReembolsable = false,
+                    PermiteCambios = true,
+                    ArticuloPersonalIncluido = true,
+                    EquipajeManoIncluido = 1,
+                    EquipajeBodegaIncluido = 0,
+                    PrecioEquipajeAdicional = 25.00m
+                });
+
+                flight.TarifasCabina.Add(new TarifaCabina
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    VueloId = flight.Id,
+                    ClaseCabina = "PREMIUM_ECONOMY",
+                    MarcaTarifa = "TOP",
+                    AsientosDisponibles = 30,
+                    TarifaBase = Math.Round(basePrice * 1.85m, 2),
+                    Impuestos = Math.Round(basePrice * 1.85m * 0.15m + 5.0m, 2),
+                    PrecioTotal = pTop,
+                    Moneda = "USD",
+                    EsReembolsable = true,
+                    PermiteCambios = true,
+                    ArticuloPersonalIncluido = true,
+                    EquipajeManoIncluido = 1,
+                    EquipajeBodegaIncluido = 1,
+                    PrecioEquipajeAdicional = 25.00m
+                });
+
+                await _uow.Vuelos.AddAsync(flight);
+            }
+
+            await _uow.CompleteAsync();
+
+            return new RouteItemDto
+            {
+                RouteKey = $"{origin}-{dest}",
+                OriginIata = origin,
+                OriginCity = request.OriginCity ?? origin,
+                DestinationIata = dest,
+                DestinationCity = request.DestinationCity ?? dest,
+                AirportName = request.AirportName ?? $"Aeropuerto de {dest} ({dest})",
+                DurationMinutes = duration,
+                BasePrice = basePrice,
+                PriceLight = pLight,
+                PricePlus = pPlus,
+                PriceTop = pTop,
+                FlightsCount = 2,
+                IsActive = true
+            };
+        }
+
+        public async Task<RouteItemDto> UpdateRouteAsync(string routeKey, UpdateRouteRequest request)
+        {
+            var parts = routeKey.Split('-');
+            if (parts.Length != 2)
+            {
+                throw new AerocacheProblemException(400, "VALIDATION_FAILED", "Identificador de ruta inválido.");
+            }
+
+            var origin = parts[0].Trim().ToUpperInvariant();
+            var dest = parts[1].Trim().ToUpperInvariant();
+
+            var flights = await _uow.Vuelos.Query()
+                .Include(f => f.TarifasCabina)
+                .Where(f => f.OrigenIata == origin && f.DestinoIata == dest)
+                .ToListAsync();
+
+            if (!flights.Any())
+            {
+                throw new AerocacheProblemException(404, "NOT_FOUND", "Ruta no encontrada.");
+            }
+
+            decimal basePrice = request.BasePrice > 0 ? request.BasePrice : 45.00m;
+            decimal pLight = request.PriceLight ?? Math.Round(basePrice + (basePrice * 0.15m + 5.0m), 2);
+            decimal pPlus = request.PricePlus ?? Math.Round(basePrice * 1.35m + (basePrice * 1.35m * 0.15m + 5.0m), 2);
+            decimal pTop = request.PriceTop ?? Math.Round(basePrice * 1.85m + (basePrice * 1.85m * 0.15m + 5.0m), 2);
+
+            foreach (var flight in flights)
+            {
+                if (request.DurationMinutes > 0)
+                {
+                    flight.DuracionMinutos = request.DurationMinutes;
+                    flight.LlegadaProgramada = flight.SalidaProgramada.AddMinutes(request.DurationMinutes);
+                }
+
+                foreach (var fare in flight.TarifasCabina)
+                {
+                    if (fare.MarcaTarifa == "BASIC" || fare.MarcaTarifa == "Light")
+                    {
+                        fare.TarifaBase = basePrice;
+                        fare.PrecioTotal = pLight;
+                    }
+                    else if (fare.MarcaTarifa == "PLUS" || fare.MarcaTarifa == "Plus")
+                    {
+                        fare.TarifaBase = Math.Round(basePrice * 1.35m, 2);
+                        fare.PrecioTotal = pPlus;
+                    }
+                    else if (fare.MarcaTarifa == "TOP" || fare.MarcaTarifa == "Top")
+                    {
+                        fare.TarifaBase = Math.Round(basePrice * 1.85m, 2);
+                        fare.PrecioTotal = pTop;
+                    }
+                }
+            }
+
+            await _uow.CompleteAsync();
+
+            return new RouteItemDto
+            {
+                RouteKey = routeKey,
+                OriginIata = origin,
+                OriginCity = origin,
+                DestinationIata = dest,
+                DestinationCity = request.DestinationCity ?? dest,
+                AirportName = request.AirportName ?? $"Aeropuerto de {dest} ({dest})",
+                DurationMinutes = request.DurationMinutes > 0 ? request.DurationMinutes : flights.First().DuracionMinutos,
+                BasePrice = basePrice,
+                PriceLight = pLight,
+                PricePlus = pPlus,
+                PriceTop = pTop,
+                FlightsCount = flights.Count,
+                IsActive = true
+            };
+        }
+
+        public async Task<bool> DeleteRouteAsync(string routeKey)
+        {
+            var parts = routeKey.Split('-');
+            if (parts.Length != 2) return false;
+
+            var origin = parts[0].Trim().ToUpperInvariant();
+            var dest = parts[1].Trim().ToUpperInvariant();
+
+            var flights = await _uow.Vuelos.Query()
+                .Include(f => f.TarifasCabina)
+                .Where(f => f.OrigenIata == origin && f.DestinoIata == dest)
+                .ToListAsync();
+
+            if (!flights.Any()) return false;
+
+            foreach (var flight in flights)
+            {
+                foreach (var fare in flight.TarifasCabina.ToList())
+                {
+                    _uow.TarifasCabina.Remove(fare);
+                }
+                _uow.Vuelos.Remove(flight);
+            }
+
+            await _uow.CompleteAsync();
+            return true;
+        }
     }
 }

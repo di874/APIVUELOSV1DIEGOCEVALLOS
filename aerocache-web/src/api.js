@@ -324,3 +324,46 @@ export async function createFlight(flightData) {
   }
   return await res.json();
 }
+
+export async function getRoutes() {
+  const res = await fetch(`${API_BASE}/admin/routes`);
+  if (!res.ok) throw new Error('Error al listar rutas');
+  return await res.json();
+}
+
+export async function createRoute(routeData) {
+  const res = await fetch(`${API_BASE}/admin/routes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(routeData)
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.title || 'Error al crear la ruta');
+  }
+  return await res.json();
+}
+
+export async function updateRoute(routeKey, routeData) {
+  const res = await fetch(`${API_BASE}/admin/routes/${encodeURIComponent(routeKey)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(routeData)
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.title || 'Error al actualizar la ruta');
+  }
+  return await res.json();
+}
+
+export async function deleteRoute(routeKey) {
+  const res = await fetch(`${API_BASE}/admin/routes/${encodeURIComponent(routeKey)}`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.title || 'Error al eliminar la ruta');
+  }
+  return true;
+}

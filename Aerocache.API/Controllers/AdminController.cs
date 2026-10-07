@@ -90,5 +90,54 @@ namespace Aerocache.API.Controllers
             var result = await _adminService.GetDestinationsAsync();
             return Ok(result);
         }
+
+        /// <summary>
+        /// Listar todas las rutas activas de Ecuador con precios y frecuencias
+        /// </summary>
+        [HttpGet("routes")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(System.Collections.Generic.List<RouteItemDto>), 200)]
+        public async Task<IActionResult> GetRoutes()
+        {
+            var result = await _adminService.GetRoutesAsync();
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Crear una nueva ruta / destino en Ecuador con tarifas personalizadas
+        /// </summary>
+        [HttpPost("routes")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(RouteItemDto), 201)]
+        [ProducesResponseType(typeof(ProblemDetailsDto), 400)]
+        public async Task<IActionResult> CreateRoute([FromBody] CreateRouteRequest request)
+        {
+            var result = await _adminService.CreateRouteAsync(request);
+            return StatusCode(201, result);
+        }
+
+        /// <summary>
+        /// Actualizar datos y precios de una ruta existente
+        /// </summary>
+        [HttpPut("routes/{routeKey}")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(RouteItemDto), 200)]
+        [ProducesResponseType(typeof(ProblemDetailsDto), 404)]
+        public async Task<IActionResult> UpdateRoute([FromRoute] string routeKey, [FromBody] UpdateRouteRequest request)
+        {
+            var result = await _adminService.UpdateRouteAsync(routeKey, request);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Eliminar una ruta de vuelo y sus itinerarios asociados
+        /// </summary>
+        [HttpDelete("routes/{routeKey}")]
+        [ProducesResponseType(204)]
+        public async Task<IActionResult> DeleteRoute([FromRoute] string routeKey)
+        {
+            await _adminService.DeleteRouteAsync(routeKey);
+            return NoContent();
+        }
     }
 }

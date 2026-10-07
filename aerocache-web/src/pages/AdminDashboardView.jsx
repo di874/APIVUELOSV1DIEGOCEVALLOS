@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, DollarSign, Ticket, Plane, CheckCircle, AlertTriangle, 
-  Clock, LogOut, RefreshCw, Eye, TrendingUp, BarChart3, ShieldCheck, Lock, X, Plus, MapPin, Calendar
+  Clock, LogOut, RefreshCw, Eye, TrendingUp, BarChart3, ShieldCheck, Lock, X, Plus, MapPin, Calendar, Edit, Trash2
 } from 'lucide-react';
-import { adminLogin, getAdminDashboardStats, updateFlightStatus, getFlightPassengers, createFlight } from '../api';
+import { 
+  adminLogin, getAdminDashboardStats, updateFlightStatus, getFlightPassengers, createFlight,
+  getRoutes, createRoute, updateRoute, deleteRoute
+} from '../api';
 
 export default function AdminDashboardView() {
   const [adminUser, setAdminUser] = useState(() => {
@@ -54,11 +57,52 @@ export default function AdminDashboardView() {
     basePrice: 49.00
   });
 
+  // Routes CRUD State
+  const [routesList, setRoutesList] = useState([]);
+  const [loadingRoutes, setLoadingRoutes] = useState(false);
+  const [showCreateRouteModal, setShowCreateRouteModal] = useState(false);
+  const [showEditRouteModal, setShowEditRouteModal] = useState(false);
+  const [selectedRouteForEdit, setSelectedRouteForEdit] = useState(null);
+  const [savingRoute, setSavingRoute] = useState(false);
+
+  const [newRouteData, setNewRouteData] = useState({
+    originIata: 'UIO',
+    originCity: 'Quito',
+    destinationIata: 'GPS',
+    destinationCity: 'Galápagos (Baltra)',
+    airportName: 'Aeropuerto Seymour de Baltra (GPS)',
+    durationMinutes: 50,
+    basePrice: 55.00,
+    priceLight: 68.25,
+    pricePlus: 92.50,
+    priceTop: 126.75,
+    initialFlightNumber: 'AC1701'
+  });
+
+  const [editRouteData, setEditRouteData] = useState({
+    routeKey: '',
+    originCity: '',
+    destinationCity: '',
+    airportName: '',
+    durationMinutes: 50,
+    basePrice: 55.00,
+    priceLight: 68.25,
+    pricePlus: 92.50,
+    priceTop: 126.75
+  });
+
   useEffect(() => {
     if (adminUser) {
       loadStats();
+      loadRoutes();
     }
   }, [adminUser]);
+
+  useEffect(() => {
+    if (adminUser && subTab === 'routes') {
+      loadRoutes();
+    }
+  }, [subTab, adminUser]);
 
   const handleLogin = async (e) => {
     if (e) e.preventDefault();
@@ -181,6 +225,126 @@ export default function AdminDashboardView() {
       alert('Error al crear vuelo: ' + err.message);
     } finally {
       setCreatingFlight(false);
+    }
+  };
+
+  const loadRoutes = async () => {
+    setLoadingRoutes(true);
+    try {
+      const data = await getRoutes();
+      setRoutesList(data || []);
+    } catch (err) {
+      console.warn('Error al cargar rutas:', err);
+    } finally {
+      setLoadingRoutes(false);
+    }
+  };
+
+  const handleCreateRouteSubmit = async (e) => {
+    e.preventDefault();
+    setSavingRoute(true);
+    try {
+      const orig = newRouteData.originIata.trim().toUpperCase();
+      const dest = newRouteData.destinationIata.trim().toUpperCase();
+      if (orig === dest) {
+        alert('El origen y el destino no pueden ser iguales.');
+        setSavingRoute(false);
+        return;
+      }
+
+      await createRoute({
+        originIata: orig,
+        originCity: newRouteData.originCity,
+        destinationIata: dest,
+        destinationCity: newRouteData.destinationCity,
+        airportName: newRouteData.airportName,
+        durationMinutes: parseInt(newRouteData.durationMinutes) || 50,
+        basePrice: parseFloat(newRouteData.basePrice) || 45.00,
+        priceLight: parseFloat(newRouteData.priceLight),
+        pricePlus: parseFloat(newRouteData.pricePlus),
+        priceTop: parseFloat(newRouteData.priceTop),
+        initialFlightNumber: newRouteData.initialFlightNumber
+      });
+
+      // Update destination in localStorage
+      const destCityName = newRouteData.destinationCity || dest;
+      const newDestObj = {
+        code: dest,
+        name: destCityName,
+        airport: newRouteData.airportName || `Aeropuerto de ${destCityName} (${dest})`
+      };
+      try {
+        const existing = JSON.parse(localStorage.getItem('aerocache_custom_destinations') || '[]');
+        const updated = [...existing.filter(d => d.code !== dest), newDestObj];
+        localStorage.setItem('aerocache_custom_destinations', JSON.stringify(updated));
+      } catch {}
+      window.dispatchEvent(new Event('destinationsUpdated'));
+
+      setShowCreateRouteModal(false);
+      setStatusSuccessMsg(`¡Ruta ${orig} ➔ ${dest} creada con éxito con precios LIGHT $${newRouteData.priceLight}, PLUS $${newRouteData.pricePlus}, TOP $${newRouteData.priceTop}!`);
+      setTimeout(() => setStatusSuccessMsg(null), 6000);
+      loadRoutes();
+      loadStats();
+    } catch (err) {
+      alert('Error al crear ruta: ' + err.message);
+    } finally {
+      setSavingRoute(false);
+    }
+  };
+
+  const handleOpenEditRoute = (route) => {
+    setSelectedRouteForEdit(route);
+    setEditRouteData({
+      routeKey: route.routeKey,
+      originCity: route.originCity,
+      destinationCity: route.destinationCity,
+      airportName: route.airportName,
+      durationMinutes: route.durationMinutes,
+      basePrice: route.basePrice,
+      priceLight: route.priceLight,
+      pricePlus: route.pricePlus,
+      priceTop: route.priceTop
+    });
+    setShowEditRouteModal(true);
+  };
+
+  const handleUpdateRouteSubmit = async (e) => {
+    e.preventDefault();
+    setSavingRoute(true);
+    try {
+      await updateRoute(editRouteData.routeKey, {
+        destinationCity: editRouteData.destinationCity,
+        airportName: editRouteData.airportName,
+        durationMinutes: parseInt(editRouteData.durationMinutes) || 50,
+        basePrice: parseFloat(editRouteData.basePrice) || 45.00,
+        priceLight: parseFloat(editRouteData.priceLight),
+        pricePlus: parseFloat(editRouteData.pricePlus),
+        priceTop: parseFloat(editRouteData.priceTop)
+      });
+      setShowEditRouteModal(false);
+      setStatusSuccessMsg(`¡Ruta ${editRouteData.routeKey} actualizada con éxito! Nuevos precios aplicados a todos sus vuelos.`);
+      setTimeout(() => setStatusSuccessMsg(null), 5000);
+      loadRoutes();
+      loadStats();
+    } catch (err) {
+      alert('Error al actualizar ruta: ' + err.message);
+    } finally {
+      setSavingRoute(false);
+    }
+  };
+
+  const handleDeleteRoute = async (routeKey) => {
+    if (!window.confirm(`¿Estás seguro de eliminar la ruta ${routeKey} y todos sus vuelos de la base de datos? Esta acción es irreversible.`)) {
+      return;
+    }
+    try {
+      await deleteRoute(routeKey);
+      setStatusSuccessMsg(`Ruta ${routeKey} eliminada exitosamente.`);
+      setTimeout(() => setStatusSuccessMsg(null), 5000);
+      loadRoutes();
+      loadStats();
+    } catch (err) {
+      alert('Error al eliminar ruta: ' + err.message);
     }
   };
 
@@ -882,38 +1046,248 @@ export default function AdminDashboardView() {
       )}
 
       {/* ========================================================= */}
-      {/* SUB-TAB 3: ROUTES PERFORMANCE                             */}
+      {/* SUB-TAB 3: RUTAS ECUADOR (CRUD OFICIAL ADMINISTRADOR)      */}
       {/* ========================================================= */}
       {subTab === 'routes' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-          {(stats?.routeStats || []).map(r => (
-            <div key={r.route} style={{
-              backgroundColor: '#fff',
-              borderRadius: '14px',
-              border: '1px solid #e2e8f0',
-              padding: '24px',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.04)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <span style={{ fontSize: '17px', fontWeight: '800', color: 'var(--color-latam-navy)' }}>
-                  {r.route}
-                </span>
-                <span style={{ fontSize: '12px', backgroundColor: '#eff6ff', color: '#1d4ed8', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
-                  {r.flightsCount} vuelos
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9', fontSize: '13px' }}>
-                <span style={{ color: '#64748b' }}>Reservas Confirmadas:</span>
-                <span style={{ fontWeight: 'bold', color: 'var(--color-latam-navy)' }}>{r.bookingsCount} reservas</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', fontSize: '13px' }}>
-                <span style={{ color: '#64748b' }}>Ingresos Generados:</span>
-                <span style={{ fontWeight: 'bold', color: '#15803d' }}>${r.totalRevenue.toFixed(2)} USD</span>
-              </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Action Bar for Routes CRUD */}
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '14px',
+            border: '1px solid #e2e8f0',
+            padding: '20px 24px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--color-latam-navy)', margin: 0 }}>
+                ✈️ Rutas de Ecuador y Gestión de Destinos (CRUD Oficial)
+              </h3>
+              <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
+                Administra destinos, programa itinerarios y personaliza precios por clase tarifaria (LIGHT, PLUS, TOP).
+              </p>
             </div>
-          ))}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={loadRoutes}
+                disabled={loadingRoutes}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 14px',
+                  borderRadius: '8px',
+                  backgroundColor: '#f1f5f9',
+                  color: 'var(--color-latam-navy)',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  border: '1px solid #cbd5e1',
+                  cursor: 'pointer'
+                }}
+              >
+                <RefreshCw size={14} className={loadingRoutes ? 'spin-animation' : ''} />
+                Refrescar
+              </button>
+
+              <button
+                onClick={() => setShowCreateRouteModal(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 18px',
+                  borderRadius: '8px',
+                  backgroundColor: '#10b981',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(16,185,129,0.35)'
+                }}
+              >
+                <Plus size={16} />
+                ➕ Nueva Ruta / Destino
+              </button>
+            </div>
+          </div>
+
+          {/* Routes Table */}
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '14px',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
+            overflow: 'hidden'
+          }}>
+            <div style={{ padding: '16px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '14px', fontWeight: '700', color: '#334155' }}>
+                Catálogo de Rutas Activas ({routesList.length})
+              </span>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                Cualquier cambio se refleja instantáneamente en el buscador de vuelos.
+              </span>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f8fafc', color: '#475569', borderBottom: '1px solid #e2e8f0', fontSize: '12px', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '12px 16px' }}>Código Ruta</th>
+                    <th style={{ padding: '12px 16px' }}>Ciudades (Origen ➔ Destino)</th>
+                    <th style={{ padding: '12px 16px' }}>Aeropuerto</th>
+                    <th style={{ padding: '12px 16px' }}>Duración</th>
+                    <th style={{ padding: '12px 16px' }}>Tarifas (LIGHT / PLUS / TOP)</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Vuelos</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'center' }}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingRoutes ? (
+                    <tr>
+                      <td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                        Cargando rutas de Ecuador...
+                      </td>
+                    </tr>
+                  ) : routesList.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#94a3b8' }}>
+                        No hay rutas configuradas. Haz clic en "Nueva Ruta / Destino" para crear la primera.
+                      </td>
+                    </tr>
+                  ) : (
+                    routesList.map((r) => (
+                      <tr key={r.routeKey} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '14px 16px' }}>
+                          <span style={{
+                            fontFamily: 'monospace',
+                            fontWeight: '800',
+                            color: '#001935',
+                            backgroundColor: '#f1f5f9',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid #cbd5e1'
+                          }}>
+                            {r.originIata} ➔ {r.destinationIata}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px 16px', fontWeight: '700', color: 'var(--color-latam-navy)' }}>
+                          {r.originCity} ➔ {r.destinationCity}
+                        </td>
+                        <td style={{ padding: '14px 16px', color: '#64748b', fontSize: '12px' }}>
+                          {r.airportName}
+                        </td>
+                        <td style={{ padding: '14px 16px', fontWeight: '600', color: '#334155' }}>
+                          ⏱️ {r.durationMinutes} min
+                        </td>
+                        <td style={{ padding: '14px 16px' }}>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#dcfce7', color: '#166534', fontWeight: 'bold' }}>
+                              LIGHT: ${r.priceLight.toFixed(2)}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold' }}>
+                              PLUS: ${r.pricePlus.toFixed(2)}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#f3e8ff', color: '#7e22ce', fontWeight: 'bold' }}>
+                              TOP: ${r.priceTop.toFixed(2)}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                          <span style={{ fontSize: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
+                            {r.flightsCount}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                          <div style={{ display: 'inline-flex', gap: '8px' }}>
+                            <button
+                              onClick={() => handleOpenEditRoute(r)}
+                              title="Editar precios y detalles de la ruta"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                backgroundColor: '#eff6ff',
+                                color: '#1d4ed8',
+                                fontSize: '12px',
+                                fontWeight: '700',
+                                border: '1px solid #bfdbfe',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Edit size={13} />
+                              Editar
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteRoute(r.routeKey)}
+                              title="Eliminar esta ruta y sus vuelos"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                backgroundColor: '#fef2f2',
+                                color: '#dc2626',
+                                fontSize: '12px',
+                                fontWeight: '700',
+                                border: '1px solid #fecaca',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <Trash2 size={13} />
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Performance Summary Cards */}
+          <div style={{ marginTop: '10px' }}>
+            <h4 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--color-latam-navy)', marginBottom: '14px' }}>
+              📊 Desempeño Comercial por Ruta
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+              {(stats?.routeStats || []).map(r => (
+                <div key={r.route} style={{
+                  backgroundColor: '#fff',
+                  borderRadius: '12px',
+                  border: '1px solid #e2e8f0',
+                  padding: '18px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '15px', fontWeight: '800', color: 'var(--color-latam-navy)' }}>
+                      {r.route}
+                    </span>
+                    <span style={{ fontSize: '11px', backgroundColor: '#eff6ff', color: '#1d4ed8', padding: '2px 7px', borderRadius: '5px', fontWeight: 'bold' }}>
+                      {r.flightsCount} vuelos
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b', marginBottom: '6px' }}>
+                    <span>Reservas:</span>
+                    <strong style={{ color: 'var(--color-latam-navy)' }}>{r.bookingsCount}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748b' }}>
+                    <span>Ingresos:</span>
+                    <strong style={{ color: '#15803d' }}>${r.totalRevenue.toFixed(2)} USD</strong>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1297,6 +1671,473 @@ export default function AdminDashboardView() {
                   }}
                 >
                   {creatingFlight ? 'Publicando Vuelo...' : '✓ Crear Vuelo y Publicar Destino'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: CREAR NUEVA RUTA / DESTINO CON PRECIOS             */}
+      {/* ========================================================= */}
+      {showCreateRouteModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 25, 53, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '18px 24px',
+              backgroundColor: 'var(--color-latam-navy)',
+              color: '#fff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>
+                  🗺️ Crear Nueva Ruta y Destino en Ecuador
+                </h3>
+                <span style={{ fontSize: '12px', color: '#9bb1c9' }}>
+                  Define origen, destino, duración y precios exactos para las clases LIGHT, PLUS y TOP.
+                </span>
+              </div>
+              <button
+                onClick={() => setShowCreateRouteModal(false)}
+                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateRouteSubmit} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Origen y Destino */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Origen IATA
+                  </label>
+                  <select
+                    value={newRouteData.originIata}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const names = { UIO: 'Quito', GYE: 'Guayaquil', CUE: 'Cuenca', GPS: 'Galápagos', MEC: 'Manta' };
+                      setNewRouteData({ ...newRouteData, originIata: val, originCity: names[val] || val });
+                    }}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 'bold' }}
+                  >
+                    <option value="UIO">Quito (UIO)</option>
+                    <option value="GYE">Guayaquil (GYE)</option>
+                    <option value="CUE">Cuenca (CUE)</option>
+                    <option value="GPS">Galápagos (GPS)</option>
+                    <option value="MEC">Manta (MEC)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Destino IATA
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={newRouteData.destinationIata}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const names = {
+                          GPS: 'Galápagos (Baltra)',
+                          SCY: 'San Cristóbal (Galápagos)',
+                          MEC: 'Manta',
+                          LOH: 'Loja (Catamayo)',
+                          ETR: 'Santa Rosa (Machala)',
+                          OCC: 'Coca (Orellana)',
+                          ESM: 'Esmeraldas',
+                          UIO: 'Quito',
+                          GYE: 'Guayaquil',
+                          CUE: 'Cuenca'
+                        };
+                        setNewRouteData({
+                          ...newRouteData,
+                          destinationIata: val,
+                          destinationCity: names[val] || val,
+                          airportName: `Aeropuerto de ${names[val] || val} (${val})`
+                        });
+                      }}
+                      style={{ width: '60%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold' }}
+                    >
+                      <option value="GPS">GPS - Galápagos</option>
+                      <option value="SCY">SCY - San Cristóbal</option>
+                      <option value="MEC">MEC - Manta</option>
+                      <option value="LOH">LOH - Loja</option>
+                      <option value="ETR">ETR - Santa Rosa</option>
+                      <option value="OCC">OCC - Coca</option>
+                      <option value="ESM">ESM - Esmeraldas</option>
+                      <option value="UIO">UIO - Quito</option>
+                      <option value="GYE">GYE - Guayaquil</option>
+                      <option value="CUE">CUE - Cuenca</option>
+                    </select>
+
+                    <input
+                      type="text"
+                      maxLength={3}
+                      placeholder="IATA"
+                      value={newRouteData.destinationIata}
+                      onChange={(e) => setNewRouteData({ ...newRouteData, destinationIata: e.target.value.toUpperCase() })}
+                      style={{ width: '40%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Ciudad Destino
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newRouteData.destinationCity}
+                    onChange={(e) => setNewRouteData({ ...newRouteData, destinationCity: e.target.value })}
+                    placeholder="ej: Galápagos (Baltra)"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Nombre del Aeropuerto
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newRouteData.airportName}
+                    onChange={(e) => setNewRouteData({ ...newRouteData, airportName: e.target.value })}
+                    placeholder="ej: Aeropuerto Seymour de Baltra"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Parámetros Operativos */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Duración Estimada (Minutos)
+                  </label>
+                  <input
+                    type="number"
+                    min="20"
+                    max="240"
+                    value={newRouteData.durationMinutes}
+                    onChange={(e) => setNewRouteData({ ...newRouteData, durationMinutes: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Número de Vuelo Inicial
+                  </label>
+                  <input
+                    type="text"
+                    value={newRouteData.initialFlightNumber}
+                    onChange={(e) => setNewRouteData({ ...newRouteData, initialFlightNumber: e.target.value })}
+                    placeholder="ej: AC1701"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 'bold' }}
+                  />
+                </div>
+              </div>
+
+              {/* Precios Solicitados por Clase */}
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '16px' }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '800', color: '#166534' }}>
+                  💵 Configuración de Precios por Clase Tarifaria (USD)
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#166534', marginBottom: '4px' }}>
+                      🟢 Tarifa LIGHT (Total USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={newRouteData.priceLight}
+                      onChange={(e) => setNewRouteData({ ...newRouteData, priceLight: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '14px', fontWeight: 'bold' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#0369a1', marginBottom: '4px' }}>
+                      🔵 Tarifa PLUS (Total USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={newRouteData.pricePlus}
+                      onChange={(e) => setNewRouteData({ ...newRouteData, pricePlus: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #7dd3fc', fontSize: '14px', fontWeight: 'bold' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#7e22ce', marginBottom: '4px' }}>
+                      🟣 Tarifa TOP (Total USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={newRouteData.priceTop}
+                      onChange={(e) => setNewRouteData({ ...newRouteData, priceTop: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d8b4fe', fontSize: '14px', fontWeight: 'bold' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateRouteModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    backgroundColor: '#f1f5f9',
+                    color: '#475569',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingRoute}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '8px',
+                    backgroundColor: '#10b981',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    cursor: savingRoute ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
+                    opacity: savingRoute ? 0.7 : 1
+                  }}
+                >
+                  {savingRoute ? 'Creando Ruta...' : '✓ Crear Ruta y Publicar Destino'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: EDITAR RUTA Y PRECIOS                              */}
+      {/* ========================================================= */}
+      {showEditRouteModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 25, 53, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '600px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '18px 24px',
+              backgroundColor: 'var(--color-latam-navy)',
+              color: '#fff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>
+                  ✏️ Editar Ruta {editRouteData.routeKey}
+                </h3>
+                <span style={{ fontSize: '12px', color: '#9bb1c9' }}>
+                  Ajusta los precios comerciales y duración de todos los vuelos de esta ruta.
+                </span>
+              </div>
+              <button
+                onClick={() => setShowEditRouteModal(false)}
+                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateRouteSubmit} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Ciudad Destino
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editRouteData.destinationCity}
+                    onChange={(e) => setEditRouteData({ ...editRouteData, destinationCity: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Duración (Minutos)
+                  </label>
+                  <input
+                    type="number"
+                    min="20"
+                    max="240"
+                    value={editRouteData.durationMinutes}
+                    onChange={(e) => setEditRouteData({ ...editRouteData, durationMinutes: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                  Nombre del Aeropuerto
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editRouteData.airportName}
+                  onChange={(e) => setEditRouteData({ ...editRouteData, airportName: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                />
+              </div>
+
+              {/* Precios Editables */}
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '16px' }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '800', color: '#166534' }}>
+                  💵 Precios Actualizados por Clase Tarifaria (USD)
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#166534', marginBottom: '4px' }}>
+                      🟢 LIGHT (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={editRouteData.priceLight}
+                      onChange={(e) => setEditRouteData({ ...editRouteData, priceLight: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '14px', fontWeight: 'bold' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#0369a1', marginBottom: '4px' }}>
+                      🔵 PLUS (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={editRouteData.pricePlus}
+                      onChange={(e) => setEditRouteData({ ...editRouteData, pricePlus: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #7dd3fc', fontSize: '14px', fontWeight: 'bold' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#7e22ce', marginBottom: '4px' }}>
+                      🟣 TOP (USD)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={editRouteData.priceTop}
+                      onChange={(e) => setEditRouteData({ ...editRouteData, priceTop: e.target.value })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d8b4fe', fontSize: '14px', fontWeight: 'bold' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowEditRouteModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    backgroundColor: '#f1f5f9',
+                    color: '#475569',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingRoute}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '8px',
+                    backgroundColor: '#1d4ed8',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    cursor: savingRoute ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 12px rgba(29,78,216,0.3)',
+                    opacity: savingRoute ? 0.7 : 1
+                  }}
+                >
+                  {savingRoute ? 'Guardando...' : '✓ Guardar Cambios de Precios'}
                 </button>
               </div>
             </form>

@@ -12,39 +12,82 @@ export default function SeatMapModal({
   passengerList,
   flightInfo, 
   isBookingFlow,
-  selectedFareBrand 
+  selectedFareBrand,
+  // Round trip support
+  isRoundTrip = false,
+  outboundInfo = null,
+  returnInfo = null,
+  onSelectRoundTripSeats = null,
+  selectedOutboundSeatsMap = null,
+  selectedReturnSeatsMap = null
 }) {
   const effectivePaxList = Array.isArray(passengerList) && passengerList.length > 0 
     ? passengerList 
     : [{ id: 'pax-1', index: 1, type: 'ADULT', label: 'Pasajero 1 (Adulto)' }];
 
-  const [assignedSeats, setAssignedSeats] = useState({});
+  const [activeFlightLeg, setActiveFlightLeg] = useState('outbound'); // 'outbound' | 'return'
+  const [assignedSeatsOutbound, setAssignedSeatsOutbound] = useState({});
+  const [assignedSeatsReturn, setAssignedSeatsReturn] = useState({});
+  const [internalAssignedSeats, setInternalAssignedSeats] = useState({});
+
   const [activePaxId, setActivePaxId] = useState(effectivePaxList[0]?.id || 'pax-1');
   const [activeSectionFilter, setActiveSectionFilter] = useState('ALL');
   const [fareAlertMessage, setFareAlertMessage] = useState(null);
 
-  const fareBrandNorm = (selectedFareBrand || 'Top').trim();
+  // Active leg dynamic data
+  const currentSeatMapData = isRoundTrip
+    ? (activeFlightLeg === 'outbound' ? (outboundInfo?.seatMapData || seatMapData) : (returnInfo?.seatMapData || seatMapData))
+    : seatMapData;
+
+  const currentFlightInfo = isRoundTrip
+    ? (activeFlightLeg === 'outbound' ? (outboundInfo?.flightNumber || 'AC-Ida') : (returnInfo?.flightNumber || 'AC-Vuelta'))
+    : flightInfo;
+
+  const currentFareBrand = isRoundTrip
+    ? (activeFlightLeg === 'outbound' ? (outboundInfo?.fareBrand || 'Top') : (returnInfo?.fareBrand || 'Top'))
+    : (selectedFareBrand || 'Top');
+
+  const fareBrandNorm = (currentFareBrand || 'Top').trim();
   const fareBrandLower = fareBrandNorm.toLowerCase(); // 'top' | 'plus' | 'light'
+
+  const assignedSeats = isRoundTrip
+    ? (activeFlightLeg === 'outbound' ? assignedSeatsOutbound : assignedSeatsReturn)
+    : internalAssignedSeats;
 
   // Initialize or reset state when modal opens
   useEffect(() => {
     if (isOpen) {
       setFareAlertMessage(null);
 
-      // Build initial assigned seats map
-      let initialMap = {};
-      if (selectedSeatsMap && typeof selectedSeatsMap === 'object' && Object.keys(selectedSeatsMap).length > 0) {
-        initialMap = { ...selectedSeatsMap };
-      } else if (selectedSeat && effectivePaxList[0]) {
-        initialMap[effectivePaxList[0].id] = selectedSeat;
+      if (isRoundTrip) {
+        setActiveFlightLeg('outbound');
+        const initialOut = (selectedOutboundSeatsMap && Object.keys(selectedOutboundSeatsMap).length > 0)
+          ? { ...selectedOutboundSeatsMap }
+          : {};
+        const initialRet = (selectedReturnSeatsMap && Object.keys(selectedReturnSeatsMap).length > 0)
+          ? { ...selectedReturnSeatsMap }
+          : {};
+        setAssignedSeatsOutbound(initialOut);
+        setAssignedSeatsReturn(initialRet);
+        const firstUnassigned = effectivePaxList.find(p => !initialOut[p.id]);
+        setActivePaxId(firstUnassigned ? firstUnassigned.id : (effectivePaxList[0]?.id || 'pax-1'));
+      } else {
+        let initialMap = {};
+        if (selectedSeatsMap && typeof selectedSeatsMap === 'object' && Object.keys(selectedSeatsMap).length > 0) {
+          initialMap = { ...selectedSeatsMap };
+        } else if (selectedSeat && effectivePaxList[0]) {
+          initialMap[effectivePaxList[0].id] = selectedSeat;
+        }
+        setInternalAssignedSeats(initialMap);
+        const firstUnassigned = effectivePaxList.find(p => !initialMap[p.id]);
+        setActivePaxId(firstUnassigned ? firstUnassigned.id : (effectivePaxList[0]?.id || 'pax-1'));
       }
-      setAssignedSeats(initialMap);
+    }
+  }, [isOpen, selectedSeat, selectedSeatsMap, selectedOutboundSeatsMap, selectedReturnSeatsMap, isRoundTrip]);
 
-      // Find first passenger without a seat
-      const firstUnassigned = effectivePaxList.find(p => !initialMap[p.id]);
-      setActivePaxId(firstUnassigned ? firstUnassigned.id : effectivePaxList[0]?.id);
-
-      // Default section filter by fare brand
+  // Adjust default section filter when leg or fare changes
+  useEffect(() => {
+    if (isOpen) {
       if (fareBrandLower === 'top') {
         setActiveSectionFilter('PREMIUM');
       } else if (fareBrandLower === 'plus') {
@@ -55,9 +98,9 @@ export default function SeatMapModal({
         setActiveSectionFilter('ALL');
       }
     }
-  }, [isOpen, selectedSeat, selectedSeatsMap, fareBrandLower]);
+  }, [isOpen, activeFlightLeg, fareBrandLower]);
 
-  if (!isOpen || !seatMapData) return null;
+  if (!isOpen || !currentSeatMapData) return null;
 
   // Active passenger details
   const activePax = effectivePaxList.find(p => p.id === activePaxId) || effectivePaxList[0];
@@ -65,7 +108,7 @@ export default function SeatMapModal({
   const isAllAssigned = totalAssignedCount === effectivePaxList.length;
 
   // Flatten all rows from cabins
-  const allRows = seatMapData?.cabins?.flatMap(c => c.rows) || [];
+  const allRows = currentSeatMapData?.cabins?.flatMap(c => c.rows) || [];
 
   // Group rows into 4 distinct aircraft sections:
   const sections = [
@@ -127,7 +170,7 @@ export default function SeatMapModal({
   const getLocallyBlockedSeats = () => {
     try {
       const stored = JSON.parse(localStorage.getItem('aerocache_blocked_seats') || '{}');
-      const list = stored[flightInfo] || [];
+      const list = stored[currentFlightInfo] || [];
       return Array.isArray(list) ? list : [];
     } catch {
       return [];
@@ -138,15 +181,12 @@ export default function SeatMapModal({
   // Class restriction logic based on selected fare:
   const isRowAllowedForFare = (rowNumber) => {
     if (fareBrandLower === 'top') {
-      // Top: Full access to all rows (1-24)
       return true;
     }
     if (fareBrandLower === 'plus') {
-      // Plus: Middle and standard (4-24). Premium (1-3) locked
       return rowNumber >= 4;
     }
     if (fareBrandLower === 'light') {
-      // Light: Rear section only (13-24). Forward and middle (1-12) locked
       return rowNumber >= 13;
     }
     return true;
@@ -190,7 +230,15 @@ export default function SeatMapModal({
     }
 
     newAssigned[activePax.id] = seatNumber;
-    setAssignedSeats(newAssigned);
+    if (isRoundTrip) {
+      if (activeFlightLeg === 'outbound') {
+        setAssignedSeatsOutbound(newAssigned);
+      } else {
+        setAssignedSeatsReturn(newAssigned);
+      }
+    } else {
+      setInternalAssignedSeats(newAssigned);
+    }
     setFareAlertMessage(null);
 
     // Auto-advance to next unassigned passenger if any
@@ -201,15 +249,37 @@ export default function SeatMapModal({
   };
 
   const handleConfirm = () => {
-    if (!isAllAssigned) return;
+    if (isRoundTrip) {
+      if (activeFlightLeg === 'outbound') {
+        if (outboundAssignedCount === effectivePaxList.length) {
+          setActiveFlightLeg('return');
+          setFareAlertMessage(null);
+          const firstUnassigned = effectivePaxList.find(p => !assignedSeatsReturn[p.id]);
+          setActivePaxId(firstUnassigned ? firstUnassigned.id : (effectivePaxList[0]?.id || 'pax-1'));
+        }
+        return;
+      }
+      if (outboundAssignedCount === effectivePaxList.length && returnAssignedCount === effectivePaxList.length) {
+        if (onSelectRoundTripSeats) {
+          onSelectRoundTripSeats({
+            outboundSeatsMap: assignedSeatsOutbound,
+            returnSeatsMap: assignedSeatsReturn
+          });
+        }
+        onClose();
+        return;
+      }
+    } else {
+      if (!isAllAssigned) return;
 
-    if (onSelectSeats) {
-      onSelectSeats(assignedSeats, effectivePaxList);
+      if (onSelectSeats) {
+        onSelectSeats(assignedSeats, effectivePaxList);
+      }
+      if (onSelectSeat && effectivePaxList[0]) {
+        onSelectSeat(assignedSeats[effectivePaxList[0].id]);
+      }
+      onClose();
     }
-    if (onSelectSeat && effectivePaxList[0]) {
-      onSelectSeat(assignedSeats[effectivePaxList[0].id]);
-    }
-    onClose();
   };
 
   const getSeatDescription = (seatNum) => {
@@ -262,20 +332,127 @@ export default function SeatMapModal({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '11px', backgroundColor: 'var(--color-latam-coral)', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
-                {isBookingFlow ? 'PASO 1 DE 2: ELECCIÓN DE ASIENTOS' : 'MAPA DE ASIENTOS'}
+                {isRoundTrip 
+                  ? `SELECCIÓN DE ASIENTOS: ${activeFlightLeg === 'outbound' ? '1. VUELO DE IDA' : '2. VUELO DE VUELTA'}`
+                  : (isBookingFlow ? 'PASO 1 DE 2: ELECCIÓN DE ASIENTOS' : 'MAPA DE ASIENTOS')}
               </span>
               <div style={{ fontSize: '18px', fontWeight: '800' }}>Airbus A320 • Flota AEROCACHE</div>
             </div>
             <div style={{ fontSize: '12px', color: '#9bb1c9', marginTop: '4px' }}>
-              {flightInfo ? `Vuelo ${flightInfo} • ` : ''}
-              Tarifa seleccionada: <strong style={{ color: '#fff' }}>{fareBrandNorm.toUpperCase()}</strong> • 
-              {effectivePaxList.length} {effectivePaxList.length === 1 ? 'Pasajero' : 'Pasajeros'}
+              {isRoundTrip 
+                ? (activeFlightLeg === 'outbound'
+                    ? `Vuelo de Ida: ${outboundInfo?.flightNumber || currentFlightInfo} (${outboundInfo?.route || 'Ida'}) • Tarifa ${fareBrandNorm.toUpperCase()}`
+                    : `Vuelo de Vuelta: ${returnInfo?.flightNumber || currentFlightInfo} (${returnInfo?.route || 'Vuelta'}) • Tarifa ${fareBrandNorm.toUpperCase()}`)
+                : (currentFlightInfo ? `Vuelo ${currentFlightInfo} • Tarifa ${fareBrandNorm.toUpperCase()} • ` : '')}
+              • {effectivePaxList.length} {effectivePaxList.length === 1 ? 'Pasajero' : 'Pasajeros'}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}>
             <X size={24} />
           </button>
         </div>
+
+        {/* Round Trip Flight Leg Switcher */}
+        {isRoundTrip && (
+          <div style={{
+            backgroundColor: '#071d33',
+            padding: '10px 20px',
+            borderBottom: '2px solid rgba(255,255,255,0.1)',
+            display: 'flex',
+            gap: '12px',
+            alignItems: 'center'
+          }}>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveFlightLeg('outbound');
+                setFareAlertMessage(null);
+                const firstUnassigned = effectivePaxList.find(p => !assignedSeatsOutbound[p.id]);
+                setActivePaxId(firstUnassigned ? firstUnassigned.id : (effectivePaxList[0]?.id || 'pax-1'));
+              }}
+              style={{
+                flex: 1,
+                padding: '9px 14px',
+                borderRadius: '8px',
+                border: activeFlightLeg === 'outbound' ? '2px solid var(--color-latam-coral)' : '1px solid rgba(255,255,255,0.2)',
+                backgroundColor: activeFlightLeg === 'outbound' ? 'rgba(232, 17, 75, 0.22)' : 'rgba(255,255,255,0.05)',
+                color: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.2s'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Plane size={16} color="var(--color-latam-coral)" />
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '800' }}>
+                    1. Asientos Vuelo de Ida
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                    {outboundInfo?.route || 'Ida'} ({outboundInfo?.flightNumber})
+                  </div>
+                </div>
+              </div>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 'bold',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                backgroundColor: outboundAssignedCount === effectivePaxList.length ? '#059669' : '#b45309',
+                color: '#fff'
+              }}>
+                {outboundAssignedCount === effectivePaxList.length ? '✓ Elegidos' : `${outboundAssignedCount}/${effectivePaxList.length}`}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveFlightLeg('return');
+                setFareAlertMessage(null);
+                const firstUnassigned = effectivePaxList.find(p => !assignedSeatsReturn[p.id]);
+                setActivePaxId(firstUnassigned ? firstUnassigned.id : (effectivePaxList[0]?.id || 'pax-1'));
+              }}
+              style={{
+                flex: 1,
+                padding: '9px 14px',
+                borderRadius: '8px',
+                border: activeFlightLeg === 'return' ? '2px solid var(--color-latam-coral)' : '1px solid rgba(255,255,255,0.2)',
+                backgroundColor: activeFlightLeg === 'return' ? 'rgba(232, 17, 75, 0.22)' : 'rgba(255,255,255,0.05)',
+                color: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.2s'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Plane size={16} color="#38bdf8" style={{ transform: 'rotate(180deg)' }} />
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '800' }}>
+                    2. Asientos Vuelo de Vuelta
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                    {returnInfo?.route || 'Vuelta'} ({returnInfo?.flightNumber})
+                  </div>
+                </div>
+              </div>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 'bold',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                backgroundColor: returnAssignedCount === effectivePaxList.length ? '#059669' : '#b45309',
+                color: '#fff'
+              }}>
+                {returnAssignedCount === effectivePaxList.length ? '✓ Elegidos' : `${returnAssignedCount}/${effectivePaxList.length}`}
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Passenger Selection Toolbar (Multi-Passenger Support) */}
         <div style={{
@@ -829,10 +1006,32 @@ export default function SeatMapModal({
         }}>
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
-              Asientos Asignados ({totalAssignedCount}/{effectivePaxList.length}):
+              {isRoundTrip
+                ? `Asientos Asignados (Ida: ${outboundAssignedCount}/${effectivePaxList.length} • Vuelta: ${returnAssignedCount}/${effectivePaxList.length}):`
+                : `Asientos Asignados (${totalAssignedCount}/${effectivePaxList.length}):`}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
               {effectivePaxList.map(pax => {
+                if (isRoundTrip) {
+                  const outSeat = assignedSeatsOutbound[pax.id];
+                  const retSeat = assignedSeatsReturn[pax.id];
+                  return (
+                    <span
+                      key={pax.id}
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 'bold',
+                        color: (outSeat && retSeat) ? '#065f46' : '#991b1b',
+                        backgroundColor: (outSeat && retSeat) ? '#d1fae5' : '#fee2e2',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        border: (outSeat && retSeat) ? '1px solid #a7f3d0' : '1px solid #fecaca'
+                      }}
+                    >
+                      P{pax.index}: Ida [{outSeat || '?'}] | Vta [{retSeat || '?'}]
+                    </span>
+                  );
+                }
                 const seat = assignedSeats[pax.id];
                 return (
                   <span
@@ -854,31 +1053,89 @@ export default function SeatMapModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={!isAllAssigned}
-            onClick={handleConfirm}
-            style={{
-              padding: '12px 24px',
-              borderRadius: '8px',
-              backgroundColor: isAllAssigned ? 'var(--color-latam-coral)' : '#94a3b8',
-              color: '#fff',
-              fontWeight: '800',
-              fontSize: '13px',
-              cursor: isAllAssigned ? 'pointer' : 'not-allowed',
-              opacity: isAllAssigned ? 1 : 0.6,
-              border: 'none',
-              boxShadow: isAllAssigned ? '0 4px 12px rgba(232, 17, 75, 0.3)' : 'none',
-              transition: 'all 0.2s',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            {isAllAssigned 
-              ? `Confirmar Asientos (${effectivePaxList.map(p => assignedSeats[p.id]).join(', ')}) y Continuar ➔` 
-              : `Falta asignar ${effectivePaxList.length - totalAssignedCount} asiento(s)`}
-          </button>
+          {isRoundTrip ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {activeFlightLeg === 'return' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveFlightLeg('outbound');
+                    setFareAlertMessage(null);
+                    const firstUnassigned = effectivePaxList.find(p => !assignedSeatsOutbound[p.id]);
+                    setActivePaxId(firstUnassigned ? firstUnassigned.id : (effectivePaxList[0]?.id || 'pax-1'));
+                  }}
+                  style={{
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#fff',
+                    color: '#334155',
+                    fontWeight: '700',
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ⬅ Asientos de Ida
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={activeFlightLeg === 'outbound' 
+                  ? outboundAssignedCount < effectivePaxList.length 
+                  : (returnAssignedCount < effectivePaxList.length || outboundAssignedCount < effectivePaxList.length)}
+                onClick={handleConfirm}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  backgroundColor: (activeFlightLeg === 'outbound' ? outboundAssignedCount === effectivePaxList.length : (returnAssignedCount === effectivePaxList.length && outboundAssignedCount === effectivePaxList.length))
+                    ? 'var(--color-latam-coral)' 
+                    : '#94a3b8',
+                  color: '#fff',
+                  fontWeight: '800',
+                  fontSize: '13px',
+                  cursor: (activeFlightLeg === 'outbound' ? outboundAssignedCount === effectivePaxList.length : (returnAssignedCount === effectivePaxList.length && outboundAssignedCount === effectivePaxList.length)) ? 'pointer' : 'not-allowed',
+                  opacity: (activeFlightLeg === 'outbound' ? outboundAssignedCount === effectivePaxList.length : (returnAssignedCount === effectivePaxList.length && outboundAssignedCount === effectivePaxList.length)) ? 1 : 0.6,
+                  border: 'none',
+                  boxShadow: (activeFlightLeg === 'outbound' ? outboundAssignedCount === effectivePaxList.length : (returnAssignedCount === effectivePaxList.length && outboundAssignedCount === effectivePaxList.length)) ? '0 4px 12px rgba(232, 17, 75, 0.3)' : 'none',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {activeFlightLeg === 'outbound'
+                  ? (outboundAssignedCount === effectivePaxList.length ? 'Continuar a Asientos de Vuelta ➔' : `Faltan ${effectivePaxList.length - outboundAssignedCount} asiento(s) de Ida`)
+                  : (returnAssignedCount === effectivePaxList.length && outboundAssignedCount === effectivePaxList.length ? '✓ Confirmar Asientos (Ida y Vuelta) y Continuar al Pago ➔' : `Faltan ${effectivePaxList.length - returnAssignedCount} asiento(s) de Vuelta`)}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={!isAllAssigned}
+              onClick={handleConfirm}
+              style={{
+                padding: '12px 24px',
+                borderRadius: '8px',
+                backgroundColor: isAllAssigned ? 'var(--color-latam-coral)' : '#94a3b8',
+                color: '#fff',
+                fontWeight: '800',
+                fontSize: '13px',
+                cursor: isAllAssigned ? 'pointer' : 'not-allowed',
+                opacity: isAllAssigned ? 1 : 0.6,
+                border: 'none',
+                boxShadow: isAllAssigned ? '0 4px 12px rgba(232, 17, 75, 0.3)' : 'none',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              {isAllAssigned 
+                ? `Confirmar Asientos (${effectivePaxList.map(p => assignedSeats[p.id]).join(', ')}) y Continuar ➔` 
+                : `Falta asignar ${effectivePaxList.length - totalAssignedCount} asiento(s)`}
+            </button>
+          )}
         </div>
       </div>
     </div>

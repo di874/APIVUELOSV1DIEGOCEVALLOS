@@ -31,6 +31,11 @@ export default function FlightSearchWidget({ onSearch, loading }) {
     today.setDate(today.getDate() + 1);
     return today.toISOString().split('T')[0];
   });
+  const [returnDate, setReturnDate] = useState(() => {
+    const today = new Date();
+    today.setDate(today.getDate() + 4);
+    return today.toISOString().split('T')[0];
+  });
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
   const [showPaxDropdown, setShowPaxDropdown] = useState(false);
@@ -86,6 +91,10 @@ export default function FlightSearchWidget({ onSearch, loading }) {
       alert('El origen y el destino no pueden ser iguales.');
       return;
     }
+    if (tripType === 'roundtrip' && returnDate < departureDate) {
+      alert('La fecha de regreso no puede ser anterior a la fecha de salida.');
+      return;
+    }
 
     const passengerList = [];
     for (let i = 1; i <= adults; i++) {
@@ -96,9 +105,11 @@ export default function FlightSearchWidget({ onSearch, loading }) {
     }
 
     onSearch({ 
+      tripType,
       origin, 
       destination, 
       departureDate, 
+      returnDate: tripType === 'roundtrip' ? returnDate : null,
       passengers: { adults, youths: 0, children, infants: 0 },
       passengerList,
       totalPassengers
@@ -144,7 +155,12 @@ export default function FlightSearchWidget({ onSearch, loading }) {
       </div>
 
       {/* Main Search Inputs Grid */}
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1.2fr 48px 1.2fr 1.1fr 1.5fr auto', gap: '12px', alignItems: 'center' }}>
+      <form onSubmit={handleSubmit} style={{ 
+        display: 'grid', 
+        gridTemplateColumns: tripType === 'roundtrip' ? '1.1fr 42px 1.1fr 1fr 1fr 1.3fr auto' : '1.2fr 48px 1.2fr 1.1fr 1.5fr auto', 
+        gap: '10px', 
+        alignItems: 'center' 
+      }}>
         
         {/* Origin */}
         <div style={{ border: '1px solid var(--color-latam-border)', borderRadius: '10px', padding: '10px 14px', background: '#fafbfc' }}>
@@ -171,8 +187,8 @@ export default function FlightSearchWidget({ onSearch, loading }) {
           onClick={handleSwap}
           title="Intercambiar origen y destino"
           style={{
-            width: '40px',
-            height: '40px',
+            width: '38px',
+            height: '38px',
             borderRadius: '50%',
             backgroundColor: 'var(--color-latam-blue-light)',
             color: 'var(--color-latam-coral)',
@@ -184,7 +200,7 @@ export default function FlightSearchWidget({ onSearch, loading }) {
             cursor: 'pointer'
           }}
         >
-          <ArrowLeftRight size={18} />
+          <ArrowLeftRight size={17} />
         </button>
 
         {/* Destination */}
@@ -209,7 +225,7 @@ export default function FlightSearchWidget({ onSearch, loading }) {
         {/* Departure Date */}
         <div style={{ border: '1px solid var(--color-latam-border)', borderRadius: '10px', padding: '10px 14px', background: '#fafbfc' }}>
           <div style={{ fontSize: '11px', color: 'var(--color-latam-text-muted)', fontWeight: '600', textTransform: 'uppercase', marginBottom: '2px' }}>
-            Fecha de Salida
+            {tripType === 'roundtrip' ? 'Ida (Salida)' : 'Fecha de Salida'}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Calendar size={18} color="#001935" />
@@ -221,6 +237,25 @@ export default function FlightSearchWidget({ onSearch, loading }) {
             />
           </div>
         </div>
+
+        {/* Return Date (only for round-trip) */}
+        {tripType === 'roundtrip' && (
+          <div style={{ border: '1px solid var(--color-latam-border)', borderRadius: '10px', padding: '10px 14px', background: '#fafbfc' }}>
+            <div style={{ fontSize: '11px', color: 'var(--color-latam-coral)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '2px' }}>
+              Vuelta (Regreso)
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Calendar size={18} color="var(--color-latam-coral)" />
+              <input
+                type="date"
+                min={departureDate}
+                value={returnDate}
+                onChange={(e) => setReturnDate(e.target.value)}
+                style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '14px', fontWeight: '600', color: '#001935', outline: 'none' }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Passengers Dropdown (Adults & Children) */}
         <div ref={paxRef} style={{ position: 'relative' }}>

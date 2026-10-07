@@ -88,7 +88,9 @@ export async function createBooking(holdId, passengerData, paymentRef) {
         email: p.email || passengerData.contactEmail || 'cliente@aerocache.ec',
         phone: p.phone || passengerData.contactPhone || '+593991234567'
       },
-      assignedSeats: p.assignedSeat ? [{ segmentId: 'SEG-1', seatNumber: p.assignedSeat }] : []
+      assignedSeats: (p.assignedSeats && p.assignedSeats.length > 0)
+        ? p.assignedSeats 
+        : (p.assignedSeat ? [{ segmentId: 'SEG-1', seatNumber: p.assignedSeat }] : [])
     }));
   } else {
     paxList = [
@@ -103,10 +105,12 @@ export async function createBooking(holdId, passengerData, paymentRef) {
         birthDate: passengerData.birthDate || '1995-01-01',
         gender: passengerData.gender || 'M',
         contact: {
-          email: passengerData.email || 'cliente@aerocache.ec',
-          phone: passengerData.phone || '+593991234567'
+          email: passengerData.email || passengerData.contactEmail || 'cliente@aerocache.ec',
+          phone: passengerData.phone || passengerData.contactPhone || '+593991234567'
         },
-        assignedSeats: passengerData.assignedSeat ? [{ segmentId: 'SEG-1', seatNumber: passengerData.assignedSeat }] : []
+        assignedSeats: (passengerData.assignedSeats && passengerData.assignedSeats.length > 0)
+          ? passengerData.assignedSeats
+          : (passengerData.assignedSeat ? [{ segmentId: 'SEG-1', seatNumber: passengerData.assignedSeat }] : [])
       }
     ];
   }

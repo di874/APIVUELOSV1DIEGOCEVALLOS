@@ -7,10 +7,17 @@ export default function CheckoutModal({
   onClose, 
   holdData, 
   selectedFare, 
-  passengerList,
-  assignedSeatsMap,
+  passengerList, 
+  assignedSeatsMap, 
   onBookingSuccess, 
-  onOpenSeatMap 
+  onOpenSeatMap,
+  // Round trip support
+  isRoundTrip = false,
+  outboundFare = null,
+  returnFare = null,
+  outboundHoldData = null,
+  returnHoldData = null,
+  returnAssignedSeatsMap = null
 }) {
   const [timeLeft, setTimeLeft] = useState(900); // 15 min default
   const [contactEmail, setContactEmail] = useState('diego.cevallos@gmail.com');
@@ -29,9 +36,12 @@ export default function CheckoutModal({
   useEffect(() => {
     if (isOpen) {
       const seatsMap = assignedSeatsMap || selectedFare?.assignedSeatsMap || {};
+      const retSeatsMap = returnAssignedSeatsMap || selectedFare?.returnAssignedSeatsMap || {};
+
       const initial = effectivePaxList.map((pax, idx) => {
         const isChild = pax.type === 'CHILD';
         const assignedSeat = seatsMap[pax.id] || (idx === 0 ? selectedFare?.selectedSeat : '') || (14 + idx) + 'A';
+        const returnAssignedSeat = retSeatsMap[pax.id] || (15 + idx) + 'C';
 
         // Prepopulate default sensible names
         let defaultFirstName = 'Diego';
@@ -61,12 +71,13 @@ export default function CheckoutModal({
           documentNumber: defaultDocNum,
           birthDate: defaultBirth,
           gender: 'M',
-          assignedSeat
+          assignedSeat,
+          returnAssignedSeat
         };
       });
       setPassengersData(initial);
     }
-  }, [isOpen, passengerList, assignedSeatsMap, selectedFare]);
+  }, [isOpen, passengerList, assignedSeatsMap, returnAssignedSeatsMap, selectedFare]);
 
   // Sync assigned seat changes if updated from seat map
   useEffect(() => {
@@ -75,14 +86,22 @@ export default function CheckoutModal({
         ...p,
         assignedSeat: assignedSeatsMap[p.id] || p.assignedSeat
       })));
-    } else if (selectedFare?.selectedSeat) {
-      setPassengersData(prev => prev.map((p, idx) => idx === 0 ? { ...p, assignedSeat: selectedFare.selectedSeat } : p));
     }
-  }, [assignedSeatsMap, selectedFare?.selectedSeat]);
+  }, [assignedSeatsMap]);
+
+  useEffect(() => {
+    if (returnAssignedSeatsMap && Object.keys(returnAssignedSeatsMap).length > 0) {
+      setPassengersData(prev => prev.map(p => ({
+        ...p,
+        returnAssignedSeat: returnAssignedSeatsMap[p.id] || p.returnAssignedSeat
+      })));
+    }
+  }, [returnAssignedSeatsMap]);
 
   // Hold Countdown Timer
   useEffect(() => {
-    if (!holdData?.holdId) return;
+    const activeHold = outboundHoldData || holdData;
+    if (!activeHold?.holdId) return;
 
     const timer = setInterval(() => {
       setTimeLeft(prev => {
@@ -95,9 +114,9 @@ export default function CheckoutModal({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [holdData]);
+  }, [holdData, outboundHoldData]);
 
-  if (!isOpen || !holdData) return null;
+  if (!isOpen || (!holdData && !outboundHoldData)) return null;
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
@@ -115,19 +134,71 @@ export default function CheckoutModal({
     setLoading(true);
     setError(null);
     try {
-      const bookingPayload = {
-        passengers: passengersData.map(p => ({
-          ...p,
-          contact: {
-            email: contactEmail,
-            phone: contactPhone
-          }
-        })),
-        contactEmail,
-        contactPhone
-      };
-      const booking = await createBooking(holdData.holdId, bookingPayload, paymentRef);
-      onBookingSuccess(booking);
+      if (isRoundTrip && outboundHoldData && returnHoldData) {
+        // 1. Outbound booking
+        const outboundPayload = {
+          passengers: passengersData.map(p => ({
+            ...p,
+            assignedSeats: [{ segmentId: 'SEG-1', seatNumber: p.assignedSeat }],
+            contact: { email: contactEmail, phone: contactPhone }
+          })),
+          contactEmail,
+          contactPhone
+        };
+        const outboundBooking = await createBooking(outboundHoldData.holdId, outboundPayload, paymentRef);
+
+        // 2. Return booking
+        const returnPayload = {
+          passengers: passengersData.map(p => ({
+            ...p,
+            assignedSeats: [{ segmentId: 'SEG-2', seatNumber: p.returnAssignedSeat }],
+            contact: { email: contactEmail, phone: contactPhone }
+          })),
+          contactEmail,
+          contactPhone
+        };
+        const returnBooking = await createBooking(returnHoldData.holdId, returnPayload, paymentRef + '-RET');
+
+        const combined = {
+          ...outboundBooking,
+          isRoundTrip: true,
+          outboundBooking,
+          returnBooking,
+          pnr: `${outboundBooking.pnr} / ${returnBooking.pnr}`,
+          outboundPnr: outboundBooking.pnr,
+          returnPnr: returnBooking.pnr,
+          originIata: outboundFare?.segment?.departure?.iataCode || outboundBooking?.itineraries?.[0]?.segments?.[0]?.departure?.iataCode || 'UIO',
+          destinationIata: outboundFare?.segment?.arrival?.iataCode || outboundBooking?.itineraries?.[0]?.segments?.[0]?.arrival?.iataCode || 'GYE',
+          outboundFlightNumber: outboundFare?.segment?.flightNumber,
+          returnFlightNumber: returnFare?.segment?.flightNumber,
+          itineraries: [
+            ...(outboundBooking.itineraries || []),
+            ...(returnBooking.itineraries || [])
+          ],
+          passengers: passengersData.map((p, idx) => ({
+            ...p,
+            assignedSeatNumber: p.assignedSeat,
+            outboundSeat: p.assignedSeat,
+            returnSeat: p.returnAssignedSeat
+          }))
+        };
+        onBookingSuccess(combined);
+      } else {
+        const bookingPayload = {
+          passengers: passengersData.map(p => ({
+            ...p,
+            assignedSeats: [{ segmentId: 'SEG-1', seatNumber: p.assignedSeat }],
+            contact: {
+              email: contactEmail,
+              phone: contactPhone
+            }
+          })),
+          contactEmail,
+          contactPhone
+        };
+        const booking = await createBooking(holdData.holdId, bookingPayload, paymentRef);
+        onBookingSuccess(booking);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -189,10 +260,12 @@ export default function CheckoutModal({
         }}>
           <div>
             <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--color-latam-navy)' }}>
-              Finalizar Reserva y Emisión de Billete
+              {isRoundTrip ? 'Finalizar Reserva (Ida y Vuelta) y Emisión de Billetes' : 'Finalizar Reserva y Emisión de Billete'}
             </h2>
             <p style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-              Tarifa <strong>{selectedFare?.fareBrand}</strong> • Vuelo {selectedFare?.segment?.flightNumber} ({selectedFare?.segment?.departure?.iataCode} ✈ {selectedFare?.segment?.arrival?.iataCode}) • {passengersData.length} {passengersData.length === 1 ? 'Pasajero' : 'Pasajeros'}
+              {isRoundTrip 
+                ? `🛫 Ida: ${outboundFare?.segment?.flightNumber} (${outboundFare?.segment?.departure?.iataCode} ✈ ${outboundFare?.segment?.arrival?.iataCode}) • 🛬 Vuelta: ${returnFare?.segment?.flightNumber} (${returnFare?.segment?.departure?.iataCode} ✈ ${returnFare?.segment?.arrival?.iataCode}) • ${passengersData.length} ${passengersData.length === 1 ? 'Pasajero' : 'Pasajeros'}`
+                : `Tarifa ${selectedFare?.fareBrand} • Vuelo ${selectedFare?.segment?.flightNumber} (${selectedFare?.segment?.departure?.iataCode} ✈ ${selectedFare?.segment?.arrival?.iataCode}) • ${passengersData.length} ${passengersData.length === 1 ? 'Pasajero' : 'Pasajeros'}`}
             </p>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', color: '#64748b', border: 'none', cursor: 'pointer' }}>
@@ -254,16 +327,43 @@ export default function CheckoutModal({
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '12px', color: '#64748b' }}>Asiento:</span>
-                        <strong style={{
-                          fontSize: '13px',
-                          color: '#fff',
-                          backgroundColor: 'var(--color-latam-coral)',
-                          padding: '2px 8px',
-                          borderRadius: '6px'
-                        }}>
-                          {pax.assignedSeat || '14A'}
-                        </strong>
+                        {isRoundTrip ? (
+                          <>
+                            <span style={{ fontSize: '11px', color: '#64748b' }}>Ida:</span>
+                            <strong style={{
+                              fontSize: '12px',
+                              color: '#fff',
+                              backgroundColor: 'var(--color-latam-coral)',
+                              padding: '2px 8px',
+                              borderRadius: '6px'
+                            }}>
+                              {pax.assignedSeat || '14A'}
+                            </strong>
+                            <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '4px' }}>Vuelta:</span>
+                            <strong style={{
+                              fontSize: '12px',
+                              color: '#fff',
+                              backgroundColor: '#0284c7',
+                              padding: '2px 8px',
+                              borderRadius: '6px'
+                            }}>
+                              {pax.returnAssignedSeat || '15C'}
+                            </strong>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: '12px', color: '#64748b' }}>Asiento:</span>
+                            <strong style={{
+                              fontSize: '13px',
+                              color: '#fff',
+                              backgroundColor: 'var(--color-latam-coral)',
+                              padding: '2px 8px',
+                              borderRadius: '6px'
+                            }}>
+                              {pax.assignedSeat || '14A'}
+                            </strong>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -383,10 +483,12 @@ export default function CheckoutModal({
           }}>
             <div>
               <div style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--color-latam-navy)' }}>
-                Asientos Asignados ({passengersData.map(p => p.assignedSeat).join(', ')})
+                {isRoundTrip
+                  ? `Asientos Asignados: Ida (${passengersData.map(p => p.assignedSeat).join(', ')}) • Vuelta (${passengersData.map(p => p.returnAssignedSeat).join(', ')})`
+                  : `Asientos Asignados (${passengersData.map(p => p.assignedSeat).join(', ')})`}
               </div>
               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                Flota Airbus A320 • Todos los pasajeros cuentan con asiento reservado y confirmado
+                Flota Airbus A320 • Asientos confirmados y reservados con éxito
               </div>
             </div>
 
@@ -440,9 +542,13 @@ export default function CheckoutModal({
           {/* Pricing Summary & Submit */}
           <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>Total a pagar con impuestos ({passengersData.length} pax, IVA 15%)</div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                {isRoundTrip ? 'Total Ida y Vuelta con tasas e impuestos (IVA 15%)' : `Total a pagar con impuestos (${passengersData.length} pax, IVA 15%)`}
+              </div>
               <div style={{ fontSize: '26px', fontWeight: '900', color: 'var(--color-latam-navy)' }}>
-                ${holdData.lockedPrice?.total} <span style={{ fontSize: '14px', fontWeight: 'normal' }}>USD</span>
+                ${isRoundTrip
+                  ? ((parseFloat(outboundHoldData?.lockedPrice?.total || selectedFare?.price || 0)) + (parseFloat(returnHoldData?.lockedPrice?.total || returnFare?.price || 0))).toFixed(2)
+                  : (holdData?.lockedPrice?.total || selectedFare?.price || '0.00')} <span style={{ fontSize: '14px', fontWeight: 'normal' }}>USD</span>
               </div>
             </div>
 
@@ -465,7 +571,7 @@ export default function CheckoutModal({
               }}
             >
               <CheckCircle size={18} />
-              {loading ? 'Emitiendo billetes...' : `Confirmar y Emitir Reserva (${passengersData.length})`}
+              {loading ? 'Emitiendo billetes...' : (isRoundTrip ? `Confirmar Reserva (Ida y Vuelta) • ${passengersData.length} Pax` : `Confirmar y Emitir Reserva (${passengersData.length})`)}
             </button>
           </div>
         </form>

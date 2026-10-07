@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, DollarSign, Ticket, Plane, CheckCircle, AlertTriangle, 
-  Clock, LogOut, RefreshCw, Eye, TrendingUp, BarChart3, ShieldCheck, Lock, X
+  Clock, LogOut, RefreshCw, Eye, TrendingUp, BarChart3, ShieldCheck, Lock, X, Plus, MapPin, Calendar
 } from 'lucide-react';
-import { adminLogin, getAdminDashboardStats, updateFlightStatus, getFlightPassengers } from '../api';
+import { adminLogin, getAdminDashboardStats, updateFlightStatus, getFlightPassengers, createFlight } from '../api';
 
 export default function AdminDashboardView() {
   const [adminUser, setAdminUser] = useState(() => {
@@ -38,6 +38,21 @@ export default function AdminDashboardView() {
   // Status updating state
   const [updatingFlight, setUpdatingFlight] = useState(null);
   const [statusSuccessMsg, setStatusSuccessMsg] = useState(null);
+
+  // Create Flight Modal State
+  const [showCreateFlightModal, setShowCreateFlightModal] = useState(false);
+  const [creatingFlight, setCreatingFlight] = useState(false);
+  const [newFlightData, setNewFlightData] = useState({
+    flightNumber: 'AC1502',
+    originIata: 'UIO',
+    originCity: 'Quito',
+    destinationIata: 'GPS',
+    destinationCity: 'Galápagos (Baltra)',
+    departureTime: '',
+    durationMinutes: 50,
+    aircraft: 'Airbus A320',
+    basePrice: 49.00
+  });
 
   useEffect(() => {
     if (adminUser) {
@@ -114,6 +129,58 @@ export default function AdminDashboardView() {
       setFlightPaxList([]);
     } finally {
       setLoadingPax(false);
+    }
+  };
+
+  const handleCreateFlightSubmit = async (e) => {
+    e.preventDefault();
+    setCreatingFlight(true);
+    try {
+      const orig = newFlightData.originIata.trim().toUpperCase();
+      const dest = newFlightData.destinationIata.trim().toUpperCase();
+      if (orig === dest) {
+        alert('El origen y el destino no pueden ser iguales.');
+        setCreatingFlight(false);
+        return;
+      }
+
+      const res = await createFlight({
+        flightNumber: newFlightData.flightNumber.trim().toUpperCase(),
+        originIata: orig,
+        destinationIata: dest,
+        originCity: newFlightData.originCity,
+        destinationCity: newFlightData.destinationCity,
+        departureTime: newFlightData.departureTime || new Date(Date.now() + 86400000).toISOString(),
+        durationMinutes: parseInt(newFlightData.durationMinutes) || 50,
+        aircraft: newFlightData.aircraft || 'Airbus A320',
+        basePrice: parseFloat(newFlightData.basePrice) || 45.00
+      });
+
+      // Save new destination to localStorage so the search widget has it immediately
+      const destCityName = newFlightData.destinationCity || dest;
+      const newDestObj = {
+        code: dest,
+        name: destCityName,
+        airport: `Aeropuerto de ${destCityName} (${dest})`
+      };
+
+      try {
+        const existing = JSON.parse(localStorage.getItem('aerocache_custom_destinations') || '[]');
+        const updated = [...existing.filter(d => d.code !== dest), newDestObj];
+        localStorage.setItem('aerocache_custom_destinations', JSON.stringify(updated));
+      } catch {}
+
+      // Notify FlightSearchWidget
+      window.dispatchEvent(new Event('destinationsUpdated'));
+
+      setShowCreateFlightModal(false);
+      setStatusSuccessMsg(`¡Vuelo ${newFlightData.flightNumber} (${orig} ➔ ${dest}) creado con éxito! Ya está disponible en la página principal.`);
+      setTimeout(() => setStatusSuccessMsg(null), 6000);
+      loadStats();
+    } catch (err) {
+      alert('Error al crear vuelo: ' + err.message);
+    } finally {
+      setCreatingFlight(false);
     }
   };
 
@@ -326,6 +393,27 @@ export default function AdminDashboardView() {
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={() => setShowCreateFlightModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '9px 18px',
+              borderRadius: '8px',
+              backgroundColor: '#10b981',
+              color: '#fff',
+              fontSize: '13px',
+              fontWeight: '700',
+              border: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(16,185,129,0.35)'
+            }}
+          >
+            <Plus size={16} />
+            Crear Vuelo / Ruta
+          </button>
+
           <button
             onClick={loadStats}
             disabled={loadingStats}
@@ -943,6 +1031,275 @@ export default function AdminDashboardView() {
                 Cerrar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Crear Nuevo Vuelo / Destino */}
+      {showCreateFlightModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 25, 53, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '650px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '18px 24px',
+              backgroundColor: 'var(--color-latam-navy)',
+              color: '#fff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>
+                  ✈️ Crear Nuevo Vuelo y Ruta
+                </h3>
+                <span style={{ fontSize: '12px', color: '#9bb1c9' }}>
+                  El nuevo destino se publicará automáticamente en el buscador de la página principal.
+                </span>
+              </div>
+              <button
+                onClick={() => setShowCreateFlightModal(false)}
+                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Form Body */}
+            <form onSubmit={handleCreateFlightSubmit} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Número de Vuelo
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newFlightData.flightNumber}
+                    onChange={(e) => setNewFlightData({ ...newFlightData, flightNumber: e.target.value })}
+                    placeholder="ej: AC1602"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 'bold' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Aeronave
+                  </label>
+                  <input
+                    type="text"
+                    value={newFlightData.aircraft}
+                    onChange={(e) => setNewFlightData({ ...newFlightData, aircraft: e.target.value })}
+                    placeholder="Airbus A320"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Origen y Destino */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Origen (IATA)
+                  </label>
+                  <select
+                    value={newFlightData.originIata}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const names = { UIO: 'Quito', GYE: 'Guayaquil', CUE: 'Cuenca', GPS: 'Galápagos' };
+                      setNewFlightData({ ...newFlightData, originIata: val, originCity: names[val] || val });
+                    }}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 'bold' }}
+                  >
+                    <option value="UIO">Quito (UIO)</option>
+                    <option value="GYE">Guayaquil (GYE)</option>
+                    <option value="CUE">Cuenca (CUE)</option>
+                    <option value="GPS">Galápagos (GPS)</option>
+                    <option value="MEC">Manta (MEC)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Destino (Seleccionar o Escribir)
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={newFlightData.destinationIata}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const names = {
+                          GPS: 'Galápagos (Baltra)',
+                          SCY: 'San Cristóbal (Galápagos)',
+                          MEC: 'Manta',
+                          LOH: 'Loja (Catamayo)',
+                          ETR: 'Santa Rosa (Machala)',
+                          OCC: 'Coca (Orellana)',
+                          ESM: 'Esmeraldas',
+                          UIO: 'Quito',
+                          GYE: 'Guayaquil',
+                          CUE: 'Cuenca'
+                        };
+                        setNewFlightData({
+                          ...newFlightData,
+                          destinationIata: val,
+                          destinationCity: names[val] || val
+                        });
+                      }}
+                      style={{ width: '60%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold' }}
+                    >
+                      <option value="GPS">GPS - Galápagos</option>
+                      <option value="SCY">SCY - San Cristóbal</option>
+                      <option value="MEC">MEC - Manta</option>
+                      <option value="LOH">LOH - Loja</option>
+                      <option value="ETR">ETR - Santa Rosa</option>
+                      <option value="OCC">OCC - Coca</option>
+                      <option value="ESM">ESM - Esmeraldas</option>
+                      <option value="UIO">UIO - Quito</option>
+                      <option value="GYE">GYE - Guayaquil</option>
+                      <option value="CUE">CUE - Cuenca</option>
+                    </select>
+
+                    <input
+                      type="text"
+                      maxLength={3}
+                      placeholder="IATA"
+                      value={newFlightData.destinationIata}
+                      onChange={(e) => setNewFlightData({ ...newFlightData, destinationIata: e.target.value.toUpperCase() })}
+                      style={{ width: '40%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Nombre de la Ciudad / Aeropuerto Destino
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newFlightData.destinationCity}
+                    onChange={(e) => setNewFlightData({ ...newFlightData, destinationCity: e.target.value })}
+                    placeholder="ej: Galápagos (Baltra)"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+              </div>
+
+              {/* Horario y Precio */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Fecha y Hora de Salida
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={newFlightData.departureTime}
+                    onChange={(e) => setNewFlightData({ ...newFlightData, departureTime: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Duración (Minutos)
+                  </label>
+                  <input
+                    type="number"
+                    min="20"
+                    max="300"
+                    value={newFlightData.durationMinutes}
+                    onChange={(e) => setNewFlightData({ ...newFlightData, durationMinutes: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Precio Base Tarifa (USD)
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontWeight: 'bold', color: '#64748b' }}>$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="10"
+                      value={newFlightData.basePrice}
+                      onChange={(e) => setNewFlightData({ ...newFlightData, basePrice: e.target.value })}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 'bold' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumen de Tarifas que se crearán */}
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '12px 16px', fontSize: '12px', color: '#166534' }}>
+                <strong>Tarifas creadas automáticamente:</strong>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                  <span>🟢 <strong>LIGHT:</strong> ${(parseFloat(newFlightData.basePrice || 45) + (parseFloat(newFlightData.basePrice || 45)*0.15 + 5)).toFixed(2)}</span>
+                  <span>🔵 <strong>PLUS:</strong> ${(parseFloat(newFlightData.basePrice || 45)*1.35 + (parseFloat(newFlightData.basePrice || 45)*1.35*0.15 + 5)).toFixed(2)}</span>
+                  <span>🟣 <strong>TOP:</strong> ${(parseFloat(newFlightData.basePrice || 45)*1.85 + (parseFloat(newFlightData.basePrice || 45)*1.85*0.15 + 5)).toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Botones de acción */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateFlightModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    backgroundColor: '#f1f5f9',
+                    color: '#475569',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={creatingFlight}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '8px',
+                    backgroundColor: '#10b981',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    cursor: creatingFlight ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
+                    opacity: creatingFlight ? 0.7 : 1
+                  }}
+                >
+                  {creatingFlight ? 'Publicando Vuelo...' : '✓ Crear Vuelo y Publicar Destino'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

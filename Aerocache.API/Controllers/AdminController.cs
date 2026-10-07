@@ -65,5 +65,30 @@ namespace Aerocache.API.Controllers
             var result = await _adminService.GetFlightPassengersAsync(flightNumber);
             return Ok(result);
         }
+
+        /// <summary>
+        /// Crear un nuevo vuelo y registrar nuevas rutas / destinos
+        /// </summary>
+        [HttpPost("flights")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(FlightOccupancyDto), 201)]
+        [ProducesResponseType(typeof(ProblemDetailsDto), 400)]
+        public async Task<IActionResult> CreateFlight([FromBody] CreateFlightRequest request)
+        {
+            var result = await _adminService.CreateFlightAsync(request);
+            return StatusCode(201, result);
+        }
+
+        /// <summary>
+        /// Obtener lista de todos los destinos y aeropuertos disponibles
+        /// </summary>
+        [HttpGet("destinations")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(System.Collections.Generic.List<DestinationDto>), 200)]
+        public async Task<IActionResult> GetDestinations()
+        {
+            var result = await _adminService.GetDestinationsAsync();
+            return Ok(result);
+        }
     }
 }

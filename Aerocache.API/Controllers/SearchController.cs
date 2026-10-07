@@ -42,5 +42,17 @@ namespace Aerocache.API.Controllers
             var result = await _searchService.GetSeatMapAsync(offerId, segmentId);
             return Ok(result);
         }
+
+        /// <summary>
+        /// Obtener lista de todos los destinos y aeropuertos disponibles
+        /// </summary>
+        [HttpGet("destinations")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(System.Collections.Generic.List<DestinationDto>), 200)]
+        public async Task<IActionResult> GetDestinations([FromServices] IAdminService adminService)
+        {
+            var result = await adminService.GetDestinationsAsync();
+            return Ok(result);
+        }
     }
 }

@@ -56,4 +56,25 @@ namespace Aerocache.Business.DTOs
     {
         public string Status { get; set; } = "SCHEDULED"; // SCHEDULED, BOARDING, DEPARTED, DELAYED, ARRIVED, CANCELLED
     }
+
+    public class CreateFlightRequest
+    {
+        public string? FlightNumber { get; set; } // e.g. "AC1601"
+        public string OriginIata { get; set; } = string.Empty; // e.g. "UIO"
+        public string DestinationIata { get; set; } = string.Empty; // e.g. "GPS"
+        public string? OriginCity { get; set; } // e.g. "Quito"
+        public string? DestinationCity { get; set; } // e.g. "Galápagos (Baltra)"
+        public string? DepartureTime { get; set; } // ISO date string or HH:mm
+        public string? ArrivalTime { get; set; }
+        public int DurationMinutes { get; set; } = 50;
+        public string Aircraft { get; set; } = "Airbus A320";
+        public decimal BasePrice { get; set; } = 49.00m;
+    }
+
+    public class DestinationDto
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Airport { get; set; } = string.Empty;
+    }
 }

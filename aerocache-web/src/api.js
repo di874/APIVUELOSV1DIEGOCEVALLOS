@@ -300,3 +300,27 @@ export async function changeSeat(bookingId, newSeatNumber, passengerId) {
   }
   return await res.json();
 }
+
+export async function getDestinations() {
+  try {
+    const res = await fetch(`${API_BASE}/destinations`);
+    if (!res.ok) throw new Error('Error al cargar destinos');
+    return await res.json();
+  } catch (err) {
+    console.warn('Fallback a destinos locales:', err);
+    return null;
+  }
+}
+
+export async function createFlight(flightData) {
+  const res = await fetch(`${API_BASE}/admin/flights`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(flightData)
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.title || 'Error al crear el vuelo');
+  }
+  return await res.json();
+}

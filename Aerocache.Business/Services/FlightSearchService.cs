@@ -32,11 +32,9 @@ namespace Aerocache.Business.Services
             var origin = firstItin.Origin?.ToUpperInvariant() ?? "";
             var dest = firstItin.Destination?.ToUpperInvariant() ?? "";
 
-            var validAirports = new HashSet<string> { "UIO", "GYE", "CUE" };
-            if (!validAirports.Contains(origin) || !validAirports.Contains(dest))
+            if (string.IsNullOrWhiteSpace(origin) || string.IsNullOrWhiteSpace(dest))
             {
-                throw new AerocacheProblemException(400, "VALIDATION_FAILED", "Ruta no disponible",
-                    $"Aerocache opera exclusivamente en Ecuador entre Quito (UIO), Guayaquil (GYE) y Cuenca (CUE). Origen o destino no válido.");
+                throw new AerocacheProblemException(400, "VALIDATION_FAILED", "Ruta no disponible", "Origen o destino no válido.");
             }
 
             if (origin == dest)

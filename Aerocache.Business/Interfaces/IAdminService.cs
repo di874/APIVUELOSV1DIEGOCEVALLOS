@@ -10,5 +10,7 @@ namespace Aerocache.Business.Interfaces
         Task<AdminDashboardStatsDto> GetDashboardStatsAsync();
         Task<FlightStatusDto> UpdateFlightStatusAsync(string flightNumber, UpdateFlightStatusRequest request);
         Task<List<PassengerItem>> GetFlightPassengersAsync(string flightNumber);
+        Task<FlightOccupancyDto> CreateFlightAsync(CreateFlightRequest request);
+        Task<List<DestinationDto>> GetDestinationsAsync();
     }
 }

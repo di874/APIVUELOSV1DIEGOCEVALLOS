@@ -1,13 +1,29 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ArrowLeftRight, Calendar, Users, Search, MapPin, ChevronDown, Plus, Minus, UserCheck } from 'lucide-react';
+import { getDestinations } from '../api';
 
-const CITIES = [
+const INITIAL_CITIES = [
   { code: 'UIO', name: 'Quito', airport: 'Mariscal Sucre (UIO)' },
   { code: 'GYE', name: 'Guayaquil', airport: 'José Joaquín de Olmedo (GYE)' },
-  { code: 'CUE', name: 'Cuenca', airport: 'Mariscal La Mar (CUE)' }
+  { code: 'CUE', name: 'Cuenca', airport: 'Mariscal La Mar (CUE)' },
+  { code: 'GPS', name: 'Galápagos (Baltra)', airport: 'Seymour de Baltra (GPS)' },
+  { code: 'SCY', name: 'San Cristóbal (Galápagos)', airport: 'San Cristóbal (SCY)' },
+  { code: 'MEC', name: 'Manta', airport: 'Eloy Alfaro (MEC)' },
+  { code: 'LOH', name: 'Loja', airport: 'Ciudad de Catamayo (LOH)' }
 ];
 
 export default function FlightSearchWidget({ onSearch, loading }) {
+  const [cities, setCities] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aerocache_custom_destinations');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_CITIES;
+  });
+
   const [origin, setOrigin] = useState('UIO');
   const [destination, setDestination] = useState('GYE');
   const [departureDate, setDepartureDate] = useState(() => {
@@ -20,6 +36,24 @@ export default function FlightSearchWidget({ onSearch, loading }) {
   const [showPaxDropdown, setShowPaxDropdown] = useState(false);
   const [tripType, setTripType] = useState('oneway');
   const paxRef = useRef(null);
+
+  const loadDestinations = async () => {
+    try {
+      const data = await getDestinations();
+      if (Array.isArray(data) && data.length > 0) {
+        setCities(data);
+        localStorage.setItem('aerocache_custom_destinations', JSON.stringify(data));
+      }
+    } catch (err) {
+      console.warn('Error cargando destinos:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadDestinations();
+    window.addEventListener('destinationsUpdated', loadDestinations);
+    return () => window.removeEventListener('destinationsUpdated', loadDestinations);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -124,7 +158,7 @@ export default function FlightSearchWidget({ onSearch, loading }) {
               onChange={(e) => setOrigin(e.target.value)}
               style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '15px', fontWeight: '700', color: '#001935', outline: 'none' }}
             >
-              {CITIES.map(c => (
+              {cities.map(c => (
                 <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
               ))}
             </select>
@@ -165,7 +199,7 @@ export default function FlightSearchWidget({ onSearch, loading }) {
               onChange={(e) => setDestination(e.target.value)}
               style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '15px', fontWeight: '700', color: '#001935', outline: 'none' }}
             >
-              {CITIES.map(c => (
+              {cities.map(c => (
                 <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
               ))}
             </select>

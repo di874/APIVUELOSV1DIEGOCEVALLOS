@@ -24,6 +24,7 @@ namespace Aerocache.DataManagement.Repositories
             OfertasCambioFecha = new GenericRepository<OfertaCambioFecha>(_context);
             SuscripcionesWebhooks = new GenericRepository<SuscripcionWebhook>(_context);
             RegistrosIdempotencia = new GenericRepository<RegistroIdempotencia>(_context);
+            Usuarios = new GenericRepository<Usuario>(_context);
         }
 
         public IGenericRepository<Vuelo> Vuelos { get; }
@@ -38,6 +39,7 @@ namespace Aerocache.DataManagement.Repositories
         public IGenericRepository<OfertaCambioFecha> OfertasCambioFecha { get; }
         public IGenericRepository<SuscripcionWebhook> SuscripcionesWebhooks { get; }
         public IGenericRepository<RegistroIdempotencia> RegistrosIdempotencia { get; }
+        public IGenericRepository<Usuario> Usuarios { get; }
 
         public async Task<int> CompleteAsync() => await _context.SaveChangesAsync();
 

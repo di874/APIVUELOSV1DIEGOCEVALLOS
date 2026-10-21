@@ -10,6 +10,8 @@ namespace Aerocache.DataAccess.Seed
     {
         public static void SeedData(AerocacheDbContext context)
         {
+            SeedUsers(context);
+
             if (context.Vuelos.Any())
                 return;
 
@@ -142,6 +144,41 @@ namespace Aerocache.DataAccess.Seed
 
             context.Vuelos.AddRange(flights);
             context.SaveChanges();
+        }
+
+        public static void SeedUsers(AerocacheDbContext context)
+        {
+            if (!context.Usuarios.Any())
+            {
+                var admin = new Usuario
+                {
+                    Id = "usr-admin-001",
+                    Nombre = "Administrador",
+                    Apellido = "AEROCACHE",
+                    Email = "admin@aerocache.ec",
+                    PasswordHash = "admin123",
+                    Rol = "ADMIN",
+                    Documento = "1751030295",
+                    Telefono = "+593991234567",
+                    FechaCreacion = DateTime.UtcNow
+                };
+
+                var clienteDemo = new Usuario
+                {
+                    Id = "usr-cliente-001",
+                    Nombre = "Diego",
+                    Apellido = "Cevallos",
+                    Email = "diego.cevallos@gmail.com",
+                    PasswordHash = "cliente123",
+                    Rol = "CLIENTE",
+                    Documento = "1751030295",
+                    Telefono = "+593991234567",
+                    FechaCreacion = DateTime.UtcNow
+                };
+
+                context.Usuarios.AddRange(admin, clienteDemo);
+                context.SaveChanges();
+            }
         }
     }
 }

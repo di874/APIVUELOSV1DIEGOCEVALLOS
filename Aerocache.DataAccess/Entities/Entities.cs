@@ -490,4 +490,36 @@ namespace Aerocache.DataAccess.Entities
         [Column("FechaCreacion")]
         public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
     }
+
+    [Table("Usuarios")]
+    public class Usuario
+    {
+        [Key]
+        [Column("Id")]
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+        [Column("Nombre")]
+        public string Nombre { get; set; } = string.Empty;
+
+        [Column("Apellido")]
+        public string Apellido { get; set; } = string.Empty;
+
+        [Column("Email")]
+        public string Email { get; set; } = string.Empty;
+
+        [Column("PasswordHash")]
+        public string PasswordHash { get; set; } = string.Empty;
+
+        [Column("Rol")]
+        public string Rol { get; set; } = "CLIENTE"; // "ADMIN" | "CLIENTE"
+
+        [Column("Documento")]
+        public string? Documento { get; set; }
+
+        [Column("Telefono")]
+        public string? Telefono { get; set; }
+
+        [Column("FechaCreacion")]
+        public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+    }
 }

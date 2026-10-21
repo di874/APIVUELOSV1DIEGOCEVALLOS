@@ -16,6 +16,7 @@ namespace Aerocache.Business
             services.AddScoped<IFlightStatusService, FlightStatusService>();
             services.AddScoped<IWebhookService, WebhookService>();
             services.AddScoped<IAdminService, AdminService>();
+            services.AddScoped<IAuthService, AuthService>();
 
             return services;
         }

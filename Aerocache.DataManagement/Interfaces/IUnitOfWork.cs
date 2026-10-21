@@ -18,6 +18,7 @@ namespace Aerocache.DataManagement.Interfaces
         IGenericRepository<OfertaCambioFecha> OfertasCambioFecha { get; }
         IGenericRepository<SuscripcionWebhook> SuscripcionesWebhooks { get; }
         IGenericRepository<RegistroIdempotencia> RegistrosIdempotencia { get; }
+        IGenericRepository<Usuario> Usuarios { get; }
 
         Task<int> CompleteAsync();
     }

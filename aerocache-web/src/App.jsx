@@ -6,6 +6,7 @@ import FlightCard from './components/FlightCard';
 import SeatMapModal from './components/SeatMapModal';
 import CheckoutModal from './components/CheckoutModal';
 import BoardingPassModal from './components/BoardingPassModal';
+import AuthModal from './components/AuthModal';
 import MyBookingsView from './pages/MyBookingsView';
 import FlightStatusView from './pages/FlightStatusView';
 import AdminDashboardView from './pages/AdminDashboardView';
@@ -58,6 +59,19 @@ export default function App() {
   // Hold & Pending Fare state for step-by-step seat selection
   const [pendingFare, setPendingFare] = useState(null);
   const [isBookingFlow, setIsBookingFlow] = useState(false);
+
+  // Authentication & Roles state
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aerocache_current_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [isAuthForBooking, setIsAuthForBooking] = useState(false);
+  const [pendingCheckoutAction, setPendingCheckoutAction] = useState(null);
 
   const handleSearch = async (searchParams) => {
     setSearchLoading(true);
@@ -143,22 +157,36 @@ export default function App() {
     // Step 1 -> Step 2: Proceed to Checkout with selected seats
     if (pendingFare && isBookingFlow) {
       const fareInfo = pendingFare;
-      try {
-        const hold = await createHold(
-          fareInfo.offerId,
-          fareInfo.itineraryId,
-          fareInfo.cabinClass,
-          fareInfo.fareBrand,
-          passengersBreakdown
-        );
-        setHoldData(hold);
-        setSelectedFare({ ...fareInfo, assignedSeatsMap: seatsMap, selectedSeat: firstSeat });
-        setCheckoutOpen(true);
-      } catch (err) {
-        alert('Error al congelar tarifa: ' + err.message);
-      } finally {
-        setIsBookingFlow(false);
+
+      const proceedWithHold = async () => {
+        try {
+          const hold = await createHold(
+            fareInfo.offerId,
+            fareInfo.itineraryId,
+            fareInfo.cabinClass,
+            fareInfo.fareBrand,
+            passengersBreakdown
+          );
+          setHoldData(hold);
+          setSelectedFare({ ...fareInfo, assignedSeatsMap: seatsMap, selectedSeat: firstSeat });
+          setSeatMapOpen(false);
+          setCheckoutOpen(true);
+        } catch (err) {
+          alert('Error al congelar tarifa: ' + err.message);
+        } finally {
+          setIsBookingFlow(false);
+        }
+      };
+
+      // Si el usuario no ha iniciado sesión, solicitamos ingreso/registro antes de ir a pagar
+      if (!currentUser) {
+        setPendingCheckoutAction(() => proceedWithHold);
+        setIsAuthForBooking(true);
+        setAuthModalOpen(true);
+        return;
       }
+
+      await proceedWithHold();
     }
   };
 
@@ -166,35 +194,48 @@ export default function App() {
   const handleSelectRoundTripSeats = async ({ outboundSeatsMap, returnSeatsMap }) => {
     setAssignedOutboundSeatsMap(outboundSeatsMap);
     setAssignedReturnSeatsMap(returnSeatsMap);
-    setSearchLoading(true);
-    try {
-      const [outHold, retHold] = await Promise.all([
-        createHold(
-          selectedOutboundFare.offerId,
-          selectedOutboundFare.itineraryId,
-          selectedOutboundFare.cabinClass,
-          selectedOutboundFare.fareBrand,
-          passengersBreakdown
-        ),
-        createHold(
-          selectedReturnFare.offerId,
-          selectedReturnFare.itineraryId,
-          selectedReturnFare.cabinClass,
-          selectedReturnFare.fareBrand,
-          passengersBreakdown
-        )
-      ]);
 
-      setOutboundHoldData(outHold);
-      setReturnHoldData(retHold);
-      setSeatMapOpen(false);
-      setIsBookingFlow(false);
-      setCheckoutOpen(true);
-    } catch (err) {
-      alert('Error al congelar tarifas para ida y vuelta: ' + err.message);
-    } finally {
-      setSearchLoading(false);
+    const proceedWithRoundTripHold = async () => {
+      setSearchLoading(true);
+      try {
+        const [outHold, retHold] = await Promise.all([
+          createHold(
+            selectedOutboundFare.offerId,
+            selectedOutboundFare.itineraryId,
+            selectedOutboundFare.cabinClass,
+            selectedOutboundFare.fareBrand,
+            passengersBreakdown
+          ),
+          createHold(
+            selectedReturnFare.offerId,
+            selectedReturnFare.itineraryId,
+            selectedReturnFare.cabinClass,
+            selectedReturnFare.fareBrand,
+            passengersBreakdown
+          )
+        ]);
+
+        setOutboundHoldData(outHold);
+        setReturnHoldData(retHold);
+        setSeatMapOpen(false);
+        setIsBookingFlow(false);
+        setCheckoutOpen(true);
+      } catch (err) {
+        alert('Error al congelar tarifas para ida y vuelta: ' + err.message);
+      } finally {
+        setSearchLoading(false);
+      }
+    };
+
+    // Si el usuario no ha iniciado sesión, solicitamos ingreso/registro antes de ir a pagar
+    if (!currentUser) {
+      setPendingCheckoutAction(() => proceedWithRoundTripHold);
+      setIsAuthForBooking(true);
+      setAuthModalOpen(true);
+      return;
     }
+
+    await proceedWithRoundTripHold();
   };
 
   const handleSelectSeat = (seat) => {
@@ -332,9 +373,33 @@ export default function App() {
     }
   };
 
+  const handleAuthSuccess = async (user, token) => {
+    setCurrentUser(user);
+    setAuthModalOpen(false);
+    if (pendingCheckoutAction) {
+      const action = pendingCheckoutAction;
+      setPendingCheckoutAction(null);
+      setIsAuthForBooking(false);
+      await action(user);
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('aerocache_current_user');
+    localStorage.removeItem('aerocache_auth_token');
+    localStorage.removeItem('aerocache_admin_user');
+  };
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Navbar 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab}
+        currentUser={currentUser}
+        onOpenAuthModal={() => { setIsAuthForBooking(false); setAuthModalOpen(true); }}
+        onLogout={handleLogout}
+      />
 
       <main style={{ flex: 1 }}>
         {activeTab === 'search' && (
@@ -613,6 +678,7 @@ export default function App() {
       <CheckoutModal
         isOpen={checkoutOpen}
         onClose={() => setCheckoutOpen(false)}
+        currentUser={currentUser}
         holdData={holdData}
         selectedFare={selectedFare}
         passengerList={passengerList}
@@ -633,6 +699,13 @@ export default function App() {
         onClose={() => setBoardingPassOpen(false)}
         booking={currentBooking}
         boardingPasses={currentBoardingPasses}
+      />
+
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => { setAuthModalOpen(false); setIsAuthForBooking(false); }}
+        onAuthSuccess={handleAuthSuccess}
+        isBookingFlow={isAuthForBooking}
       />
 
       <Footer />

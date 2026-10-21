@@ -19,10 +19,14 @@ namespace Aerocache.DataAccess.Context
         public DbSet<OfertaCambioFecha> OfertasCambioFecha => Set<OfertaCambioFecha>();
         public DbSet<SuscripcionWebhook> SuscripcionesWebhooks => Set<SuscripcionWebhook>();
         public DbSet<RegistroIdempotencia> RegistrosIdempotencia => Set<RegistroIdempotencia>();
+        public DbSet<Usuario> Usuarios => Set<Usuario>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<Usuario>().ToTable("Usuarios").HasKey(x => x.Id);
+            modelBuilder.Entity<Usuario>().HasIndex(x => x.Email).IsUnique();
 
             modelBuilder.Entity<Vuelo>().ToTable("Vuelos").HasKey(x => x.Id);
             modelBuilder.Entity<TarifaCabina>().ToTable("TarifasCabina").HasKey(x => x.Id);

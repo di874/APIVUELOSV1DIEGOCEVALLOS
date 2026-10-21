@@ -17,11 +17,12 @@ export default function CheckoutModal({
   returnFare = null,
   outboundHoldData = null,
   returnHoldData = null,
-  returnAssignedSeatsMap = null
+  returnAssignedSeatsMap = null,
+  currentUser = null
 }) {
   const [timeLeft, setTimeLeft] = useState(900); // 15 min default
-  const [contactEmail, setContactEmail] = useState('diego.cevallos@gmail.com');
-  const [contactPhone, setContactPhone] = useState('+593991234567');
+  const [contactEmail, setContactEmail] = useState(currentUser?.email || 'diego.cevallos@gmail.com');
+  const [contactPhone, setContactPhone] = useState(currentUser?.telefono || '+593991234567');
   const [paymentRef, setPaymentRef] = useState('PAY-LATAM-' + Math.floor(100000 + Math.random() * 900000));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -35,6 +36,9 @@ export default function CheckoutModal({
   // Initialize or update passengers list
   useEffect(() => {
     if (isOpen) {
+      if (currentUser?.email) setContactEmail(currentUser.email);
+      if (currentUser?.telefono) setContactPhone(currentUser.telefono);
+
       const seatsMap = assignedSeatsMap || selectedFare?.assignedSeatsMap || {};
       const retSeatsMap = returnAssignedSeatsMap || selectedFare?.returnAssignedSeatsMap || {};
 
@@ -43,10 +47,10 @@ export default function CheckoutModal({
         const assignedSeat = seatsMap[pax.id] || (idx === 0 ? selectedFare?.selectedSeat : '') || (14 + idx) + 'A';
         const returnAssignedSeat = retSeatsMap[pax.id] || (15 + idx) + 'C';
 
-        // Prepopulate default sensible names
-        let defaultFirstName = 'Diego';
-        let defaultLastName = 'Cevallos';
-        let defaultDocNum = '1751030295';
+        // Prepopulate default sensible names or logged in user for pax 0
+        let defaultFirstName = idx === 0 && currentUser?.nombre ? currentUser.nombre : 'Diego';
+        let defaultLastName = idx === 0 && currentUser?.apellido ? currentUser.apellido : 'Cevallos';
+        let defaultDocNum = idx === 0 && currentUser?.documento ? currentUser.documento : '1751030295';
         let defaultBirth = '1998-05-15';
 
         if (idx === 1) {

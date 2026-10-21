@@ -5,12 +5,18 @@ import {
 } from 'lucide-react';
 import { 
   adminLogin, getAdminDashboardStats, updateFlightStatus, getFlightPassengers, createFlight,
-  getRoutes, createRoute, updateRoute, deleteRoute
+  getRoutes, createRoute, updateRoute, deleteRoute,
+  loginUser, createAdminUser, getAdminUsers
 } from '../api';
 
 export default function AdminDashboardView() {
   const [adminUser, setAdminUser] = useState(() => {
     try {
+      const savedUser = localStorage.getItem('aerocache_current_user');
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        if (u.rol === 'ADMIN') return u;
+      }
       const saved = localStorage.getItem('aerocache_admin_user');
       return saved ? JSON.parse(saved) : null;
     } catch {
@@ -22,6 +28,21 @@ export default function AdminDashboardView() {
   const [passwordInput, setPasswordInput] = useState('admin123');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState(null);
+
+  // Admin Management State
+  const [adminsList, setAdminsList] = useState([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [showCreateAdminModal, setShowCreateAdminModal] = useState(false);
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [adminSuccessMsg, setAdminSuccessMsg] = useState(null);
+  const [newAdminForm, setNewAdminForm] = useState({
+    nombre: '',
+    apellido: '',
+    email: '',
+    password: '',
+    documento: '',
+    telefono: ''
+  });
 
   // Dashboard Data State
   const [stats, setStats] = useState(null);
@@ -102,16 +123,43 @@ export default function AdminDashboardView() {
     if (adminUser && subTab === 'routes') {
       loadRoutes();
     }
+    if (adminUser && subTab === 'admins') {
+      loadAdmins();
+    }
   }, [subTab, adminUser]);
+
+  const loadAdmins = async () => {
+    setLoadingAdmins(true);
+    try {
+      const data = await getAdminUsers();
+      setAdminsList(Array.isArray(data) ? data : (data.value || []));
+    } catch (err) {
+      console.warn('Error al cargar administradores:', err);
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
 
   const handleLogin = async (e) => {
     if (e) e.preventDefault();
     setLoginLoading(true);
     setLoginError(null);
     try {
-      const user = await adminLogin(emailInput, passwordInput);
-      setAdminUser(user);
-      localStorage.setItem('aerocache_admin_user', JSON.stringify(user));
+      const res = await loginUser(emailInput, passwordInput);
+      if (res.success && res.user && res.user.rol === 'ADMIN') {
+        const u = {
+          name: `${res.user.nombre} ${res.user.apellido}`,
+          email: res.user.email,
+          role: res.user.rol,
+          token: res.token
+        };
+        setAdminUser(u);
+        localStorage.setItem('aerocache_admin_user', JSON.stringify(u));
+        localStorage.setItem('aerocache_current_user', JSON.stringify(res.user));
+        localStorage.setItem('aerocache_auth_token', res.token);
+      } else {
+        throw new Error('Esta cuenta no cuenta con permisos de Administrador.');
+      }
     } catch (err) {
       setLoginError(err.message);
     } finally {
@@ -122,7 +170,28 @@ export default function AdminDashboardView() {
   const handleLogout = () => {
     setAdminUser(null);
     localStorage.removeItem('aerocache_admin_user');
+    localStorage.removeItem('aerocache_current_user');
+    localStorage.removeItem('aerocache_auth_token');
     setStats(null);
+  };
+
+  const handleCreateAdminSubmit = async (e) => {
+    e.preventDefault();
+    setCreatingAdmin(true);
+    try {
+      const res = await createAdminUser(newAdminForm);
+      if (res.success) {
+        setAdminSuccessMsg(`Nuevo administrador '${newAdminForm.nombre} ${newAdminForm.apellido}' creado exitosamente.`);
+        setTimeout(() => setAdminSuccessMsg(null), 5000);
+        setShowCreateAdminModal(false);
+        setNewAdminForm({ nombre: '', apellido: '', email: '', password: '', documento: '', telefono: '' });
+        loadAdmins();
+      }
+    } catch (err) {
+      alert('Error al crear administrador: ' + err.message);
+    } finally {
+      setCreatingAdmin(false);
+    }
   };
 
   const loadStats = async () => {
@@ -505,6 +574,12 @@ export default function AdminDashboardView() {
     b.status.toLowerCase().includes(searchFilter.toLowerCase())
   );
 
+  const filteredAdmins = adminsList.filter(a => 
+    `${a.nombre || ''} ${a.apellido || ''}`.toLowerCase().includes(searchFilter.toLowerCase()) ||
+    (a.email || '').toLowerCase().includes(searchFilter.toLowerCase()) ||
+    (a.documento || '').includes(searchFilter)
+  );
+
   return (
     <div style={{ maxWidth: '1200px', margin: '30px auto 60px auto', padding: '0 20px' }}>
       
@@ -557,6 +632,27 @@ export default function AdminDashboardView() {
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={() => setShowCreateAdminModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '9px 18px',
+              borderRadius: '8px',
+              backgroundColor: '#3b82f6',
+              color: '#fff',
+              fontSize: '13px',
+              fontWeight: '700',
+              border: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(59,130,246,0.35)'
+            }}
+          >
+            <ShieldCheck size={16} />
+            Crear Administrador
+          </button>
+
           <button
             onClick={() => setShowCreateFlightModal(true)}
             style={{
@@ -775,7 +871,8 @@ export default function AdminDashboardView() {
           {[
             { id: 'flights', label: '✈ Control de Vuelos y Ocupación' },
             { id: 'bookings', label: '📋 Pasajeros y Reservas' },
-            { id: 'routes', label: '📊 Rutas Ecuador (UIO, GYE, CUE)' }
+            { id: 'routes', label: '📊 Rutas Ecuador (UIO, GYE, CUE)' },
+            { id: 'admins', label: '🛡️ Administradores del Sistema' }
           ].map(t => (
             <button
               key={t.id}
@@ -801,7 +898,11 @@ export default function AdminDashboardView() {
         {subTab !== 'routes' && (
           <input
             type="text"
-            placeholder={subTab === 'flights' ? 'Buscar vuelo, ruta o estado...' : 'Buscar por PNR, pasajero o ruta...'}
+            placeholder={
+              subTab === 'flights' ? 'Buscar vuelo, ruta o estado...' :
+              subTab === 'admins' ? 'Buscar administrador por nombre o email...' :
+              'Buscar por PNR, pasajero o ruta...'
+            }
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             style={{
@@ -1287,6 +1388,156 @@ export default function AdminDashboardView() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* SUB-TAB 4: ADMINISTRATORS & ROLES                         */}
+      {/* ========================================================= */}
+      {subTab === 'admins' && (
+        <div style={{
+          backgroundColor: '#fff',
+          borderRadius: '14px',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
+          overflow: 'hidden'
+        }}>
+          <div style={{
+            padding: '18px 24px',
+            borderBottom: '1px solid #f1f5f9',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            backgroundColor: '#fafbfc'
+          }}>
+            <div>
+              <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--color-latam-navy)', margin: 0 }}>
+                🛡️ Administradores del Sistema y Control de Roles
+              </h3>
+              <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0' }}>
+                Usuarios autorizados con permisos totales sobre rutas, inventario de vuelos y supervisión financiera.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCreateAdminModal(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '9px 16px',
+                borderRadius: '8px',
+                backgroundColor: '#3b82f6',
+                color: '#fff',
+                fontSize: '13px',
+                fontWeight: '700',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(59,130,246,0.25)'
+              }}
+            >
+              <Plus size={16} />
+              Añadir Administrador
+            </button>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#f8fafc', color: '#475569', borderBottom: '1px solid #e2e8f0', fontSize: '12px', textTransform: 'uppercase' }}>
+                  <th style={{ padding: '12px 18px' }}>Nombre y Apellido</th>
+                  <th style={{ padding: '12px 18px' }}>Correo Electrónico</th>
+                  <th style={{ padding: '12px 18px' }}>Rol Asignado</th>
+                  <th style={{ padding: '12px 18px' }}>Identificación / Documento</th>
+                  <th style={{ padding: '12px 18px' }}>Teléfono</th>
+                  <th style={{ padding: '12px 18px' }}>Fecha Alta</th>
+                  <th style={{ padding: '12px 18px', textAlign: 'center' }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingAdmins ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                      Cargando listado de administradores...
+                    </td>
+                  </tr>
+                ) : filteredAdmins.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#94a3b8' }}>
+                      No se encontraron administradores que coincidan con la búsqueda.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredAdmins.map((adm) => (
+                    <tr key={adm.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '14px 18px', fontWeight: '700', color: 'var(--color-latam-navy)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '50%',
+                            backgroundColor: '#eff6ff',
+                            color: '#1d4ed8',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: '800',
+                            fontSize: '12px'
+                          }}>
+                            {(adm.nombre?.[0] || 'A')}{(adm.apellido?.[0] || '')}
+                          </div>
+                          <span>{adm.nombre} {adm.apellido}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 18px', fontFamily: 'monospace', color: '#334155' }}>
+                        {adm.email}
+                      </td>
+                      <td style={{ padding: '14px 18px' }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '3px 9px',
+                          borderRadius: '6px',
+                          backgroundColor: '#fef2f2',
+                          color: '#dc2626',
+                          border: '1px solid #fecaca',
+                          fontWeight: '800',
+                          fontSize: '11px'
+                        }}>
+                          <ShieldCheck size={12} />
+                          {adm.rol}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 18px', color: '#64748b' }}>
+                        {adm.documento || 'No especificado'}
+                      </td>
+                      <td style={{ padding: '14px 18px', color: '#64748b' }}>
+                        {adm.telefono || 'No especificado'}
+                      </td>
+                      <td style={{ padding: '14px 18px', color: '#64748b', fontSize: '12px' }}>
+                        {adm.fechaCreacion ? new Date(adm.fechaCreacion).toLocaleDateString('es-EC') : 'N/A'}
+                      </td>
+                      <td style={{ padding: '14px 18px', textAlign: 'center' }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '3px 8px',
+                          borderRadius: '12px',
+                          backgroundColor: '#ecfdf5',
+                          color: '#059669',
+                          fontWeight: '700',
+                          fontSize: '11px'
+                        }}>
+                          ● Activo
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -2138,6 +2389,202 @@ export default function AdminDashboardView() {
                   }}
                 >
                   {savingRoute ? 'Guardando...' : '✓ Guardar Cambios de Precios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: CREAR NUEVO ADMINISTRADOR                          */}
+      {/* ========================================================= */}
+      {showCreateAdminModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 25, 53, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '540px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '18px 24px',
+              backgroundColor: 'var(--color-latam-navy)',
+              color: '#fff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>
+                  🛡️ Registrar Nuevo Administrador
+                </h3>
+                <span style={{ fontSize: '12px', color: '#9bb1c9' }}>
+                  Asignará permisos completos sobre la plataforma Aerocache.
+                </span>
+              </div>
+              <button
+                onClick={() => setShowCreateAdminModal(false)}
+                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleCreateAdminSubmit} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Nombre *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newAdminForm.nombre}
+                    onChange={(e) => setNewAdminForm({ ...newAdminForm, nombre: e.target.value })}
+                    placeholder="ej: Andrés"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Apellido *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newAdminForm.apellido}
+                    onChange={(e) => setNewAdminForm({ ...newAdminForm, apellido: e.target.value })}
+                    placeholder="ej: Morales"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                  Correo Electrónico Corporativo *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newAdminForm.email}
+                  onChange={(e) => setNewAdminForm({ ...newAdminForm, email: e.target.value })}
+                  placeholder="ej: andres.morales@aerocache.ec"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                  Contraseña de Acceso * (Mínimo 6 caracteres)
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={newAdminForm.password}
+                  onChange={(e) => setNewAdminForm({ ...newAdminForm, password: e.target.value })}
+                  placeholder="••••••••"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Cédula / Documento *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newAdminForm.documento}
+                    onChange={(e) => setNewAdminForm({ ...newAdminForm, documento: e.target.value })}
+                    placeholder="1723456789"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>
+                    Teléfono Celular
+                  </label>
+                  <input
+                    type="text"
+                    value={newAdminForm.telefono}
+                    onChange={(e) => setNewAdminForm({ ...newAdminForm, telefono: e.target.value })}
+                    placeholder="0991234567"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                fontSize: '12px',
+                color: '#1e40af',
+                lineHeight: '1.4'
+              }}>
+                🛡️ <strong>Privilegios de Administrador:</strong> Esta cuenta tendrá rol <code>ADMIN</code> y acceso completo a gestión de vuelos, modificación de tarifas y creación de cuentas administrativas.
+              </div>
+
+              {/* Botones */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateAdminModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    backgroundColor: '#f1f5f9',
+                    color: '#475569',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={creatingAdmin}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: '8px',
+                    backgroundColor: '#3b82f6',
+                    color: '#fff',
+                    border: 'none',
+                    fontWeight: 'bold',
+                    cursor: creatingAdmin ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 12px rgba(59,130,246,0.3)',
+                    opacity: creatingAdmin ? 0.7 : 1
+                  }}
+                >
+                  {creatingAdmin ? 'Guardando...' : '✓ Crear Administrador'}
                 </button>
               </div>
             </form>

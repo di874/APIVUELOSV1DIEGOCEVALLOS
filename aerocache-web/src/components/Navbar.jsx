@@ -1,7 +1,9 @@
 import React from 'react';
-import { Plane, Calendar, UserCheck, Search, ShieldCheck, LayoutDashboard } from 'lucide-react';
+import { Plane, Calendar, UserCheck, Search, ShieldCheck, LayoutDashboard, User, LogOut, Lock } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab }) {
+export default function Navbar({ activeTab, setActiveTab, currentUser, onOpenAuthModal, onLogout }) {
+  const isAdmin = currentUser?.rol === 'ADMIN';
+
   return (
     <header style={{ backgroundColor: 'var(--color-latam-navy)', color: '#fff', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 4px 15px rgba(0,0,0,0.15)' }}>
       {/* Top Utility Bar */}
@@ -10,14 +12,79 @@ export default function Navbar({ activeTab, setActiveTab }) {
           <span>✈ Vuelos Domésticos Ecuador: <strong>Quito (UIO) • Guayaquil (GYE) • Cuenca (CUE)</strong></span>
           <span>• Moneda: <strong>USD ($)</strong></span>
         </div>
-        <div style={{ display: 'flex', gap: '16px', color: '#9bb1c9' }}>
-          <span style={{ cursor: 'pointer' }}>Ayuda 24/7</span>
-          <span style={{ cursor: 'pointer' }}>Atención al Cliente</span>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', color: '#9bb1c9' }}>
+          {currentUser ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{
+                backgroundColor: isAdmin ? 'rgba(232, 17, 75, 0.25)' : 'rgba(14, 165, 233, 0.25)',
+                color: isAdmin ? '#ff8da1' : '#7dd3fc',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontWeight: 'bold',
+                fontSize: '11px',
+                border: isAdmin ? '1px solid rgba(232, 17, 75, 0.4)' : '1px solid rgba(14, 165, 233, 0.4)'
+              }}>
+                {isAdmin ? '🛡️ Administrador' : '👤 Pasajero'}
+              </span>
+              <span style={{ color: '#fff', fontWeight: '600' }}>
+                {currentUser.nombre} {currentUser.apellido}
+              </span>
+              <button
+                type="button"
+                onClick={onLogout}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  color: '#cbd5e1',
+                  borderRadius: '6px',
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                title="Cerrar Sesión"
+              >
+                <LogOut size={12} />
+                Salir
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenAuthModal}
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                color: '#fff',
+                border: '1px solid rgba(255, 255, 255, 0.25)',
+                borderRadius: '16px',
+                padding: '3px 12px',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <User size={13} />
+              Iniciar Sesión / Registrarse
+            </button>
+          )}
+
           <span 
-            onClick={() => setActiveTab('admin')} 
-            style={{ color: '#ff8da1', fontWeight: 'bold', cursor: 'pointer' }}
+            onClick={() => {
+              if (isAdmin) {
+                setActiveTab('admin');
+              } else {
+                onOpenAuthModal();
+              }
+            }} 
+            style={{ color: '#ff8da1', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
           >
-            🔒 Portal Administrador
+            <Lock size={12} />
+            {isAdmin ? 'Panel Admin' : 'Acceso Admin'}
           </span>
         </div>
       </div>
@@ -59,7 +126,7 @@ export default function Navbar({ activeTab, setActiveTab }) {
             { id: 'bookings', label: 'Mis Viajes', icon: Calendar },
             { id: 'checkin', label: 'Check-in', icon: UserCheck },
             { id: 'status', label: 'Estado de Vuelo', icon: ShieldCheck },
-            { id: 'admin', label: 'Panel Admin', icon: LayoutDashboard }
+            ...(isAdmin ? [{ id: 'admin', label: 'Panel Admin', icon: LayoutDashboard }] : [])
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;

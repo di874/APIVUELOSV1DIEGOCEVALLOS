@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
@@ -95,6 +96,23 @@ using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AerocacheDbContext>();
     context.Database.EnsureCreated();
+
+    // Ensure Usuarios table exists in SQLite
+    context.Database.ExecuteSqlRaw(@"
+        CREATE TABLE IF NOT EXISTS ""Usuarios"" (
+            ""Id"" TEXT NOT NULL CONSTRAINT ""PK_Usuarios"" PRIMARY KEY,
+            ""Nombre"" TEXT NOT NULL,
+            ""Apellido"" TEXT NOT NULL,
+            ""Email"" TEXT NOT NULL,
+            ""PasswordHash"" TEXT NOT NULL,
+            ""Rol"" TEXT NOT NULL,
+            ""Documento"" TEXT NULL,
+            ""Telefono"" TEXT NULL,
+            ""FechaCreacion"" TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Usuarios_Email"" ON ""Usuarios"" (""Email"");
+    ");
+
     AerocacheDataSeeder.SeedData(context);
 }
 

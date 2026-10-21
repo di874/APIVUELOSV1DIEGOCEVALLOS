@@ -371,3 +371,55 @@ export async function deleteRoute(routeKey) {
   }
   return true;
 }
+
+export async function loginUser(email, password) {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.title || 'Error al iniciar sesión');
+  }
+  return await res.json();
+}
+
+export async function registerClient(clientData) {
+  const res = await fetch(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(clientData)
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.title || 'Error al registrar cliente');
+  }
+  return await res.json();
+}
+
+export async function createAdminUser(adminData) {
+  const res = await fetch(`${API_BASE}/auth/admin/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(adminData)
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.title || 'Error al crear administrador');
+  }
+  return await res.json();
+}
+
+export async function getAdminUsers() {
+  const res = await fetch(`${API_BASE}/auth/admin/list`);
+  if (!res.ok) throw new Error('Error al listar administradores');
+  return await res.json();
+}
+
+export async function getClientUsers() {
+  const res = await fetch(`${API_BASE}/auth/clients/list`);
+  if (!res.ok) throw new Error('Error al listar clientes');
+  return await res.json();
+}
+

@@ -423,3 +423,36 @@ export async function getClientUsers() {
   return await res.json();
 }
 
+// ==========================================
+// SOAP Microservice Client (MS.G.PostSale)
+// ==========================================
+export const SOAP_POSTSALE_URL = `${API_BASE}/services/postsale.asmx`;
+export const SOAP_POSTSALE_WSDL = `${API_BASE}/services/postsale.asmx?wsdl`;
+
+export async function invokeSoapPostSale(action, requestXmlBody) {
+  const envelope = `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:posts="http://aerocache.ec/services/postsale">
+  <soapenv:Header/>
+  <soapenv:Body>
+    ${requestXmlBody}
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+  const res = await fetch(SOAP_POSTSALE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/xml; charset=utf-8',
+      'SOAPAction': `http://aerocache.ec/services/postsale/${action}`
+    },
+    body: envelope
+  });
+
+  const rawXml = await res.text();
+  return {
+    ok: res.ok,
+    status: res.status,
+    requestXml: envelope,
+    responseXml: rawXml
+  };
+}
+

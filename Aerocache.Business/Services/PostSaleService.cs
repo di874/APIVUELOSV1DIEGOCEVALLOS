@@ -15,10 +15,12 @@ namespace Aerocache.Business.Services
     public class PostSaleService : IPostSaleService
     {
         private readonly IUnitOfWork _uow;
+        private readonly IEventBus? _eventBus;
 
-        public PostSaleService(IUnitOfWork uow)
+        public PostSaleService(IUnitOfWork uow, IEventBus? eventBus = null)
         {
             _uow = uow;
+            _eventBus = eventBus;
         }
 
         public async Task<List<BaggageOptionItem>> GetBaggageOptionsAsync(string bookingId)
@@ -73,6 +75,19 @@ namespace Aerocache.Business.Services
             booking.FechaActualizacion = DateTime.UtcNow;
 
             await _uow.CompleteAsync();
+
+            if (_eventBus != null)
+            {
+                await _eventBus.PublishAsync("booking.baggage_added", new
+                {
+                    bookingId = booking.ReservaId,
+                    pnr = booking.Pnr,
+                    passengerId = passenger.Id,
+                    addedQuantity = request.Quantity,
+                    totalBaggage = passenger.CantidadEquipajeExtra,
+                    totalBookingAmount = booking.MontoTotalGeneral
+                });
+            }
 
             return new BaggageAddedResponse
             {
@@ -161,7 +176,18 @@ namespace Aerocache.Business.Services
 
             await _uow.CompleteAsync();
 
-            var bookingService = new BookingService(_uow);
+            if (_eventBus != null)
+            {
+                await _eventBus.PublishAsync("booking.rescheduled", new
+                {
+                    bookingId = booking.ReservaId,
+                    pnr = booking.Pnr,
+                    newDate = offer.NuevaFechaSalida,
+                    additionalPaid = offer.TotalPagar
+                });
+            }
+
+            var bookingService = new BookingService(_uow, _eventBus);
             return await bookingService.GetBookingDetailAsync(bookingId);
         }
 
@@ -237,6 +263,17 @@ namespace Aerocache.Business.Services
             }
 
             await _uow.CompleteAsync();
+
+            if (_eventBus != null)
+            {
+                await _eventBus.PublishAsync("booking.cancelled", new
+                {
+                    bookingId = booking.ReservaId,
+                    pnr = booking.Pnr,
+                    refund = quote.MontoReembolso,
+                    reason = booking.MotivoCancelacion
+                });
+            }
         }
 
         public async Task<ChangeSeatResponse> ChangeSeatAsync(string bookingId, ChangeSeatRequest request)

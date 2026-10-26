@@ -18,6 +18,12 @@ namespace Aerocache.Business
             services.AddScoped<IAdminService, AdminService>();
             services.AddScoped<IAuthService, AuthService>();
 
+            // Event Bus RabbitMQ
+            services.AddSingleton<IEventBus, RabbitMqEventBus>();
+
+            // SOAP PostSale Service (MS.G.PostSale)
+            services.AddScoped<IPostSaleSoapService, PostSaleSoapService>();
+
             return services;
         }
     }

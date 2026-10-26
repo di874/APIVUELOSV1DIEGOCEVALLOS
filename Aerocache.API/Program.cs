@@ -8,11 +8,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 using Aerocache.API.Middleware;
+using Aerocache.API.Workers;
 using Aerocache.Business;
+using Aerocache.Business.Interfaces;
 using Aerocache.DataAccess;
 using Aerocache.DataAccess.Context;
 using Aerocache.DataAccess.Seed;
 using Aerocache.DataManagement;
+using SoapCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,6 +39,12 @@ builder.Services.AddControllers()
 builder.Services.AddDataAccess(builder.Configuration);
 builder.Services.AddDataManagement();
 builder.Services.AddBusiness();
+
+// Register SoapCore for MS.G.PostSale WSDL / SOAP Service
+builder.Services.AddSoapCore();
+
+// Register MS.G.Webhooks background worker (RabbitMQ Consumer)
+builder.Services.AddHostedService<WebhookDispatcherWorker>();
 
 // Configure CORS for Frontend integration
 builder.Services.AddCors(options =>
@@ -129,8 +138,9 @@ app.UseSwaggerUI(c =>
 
 app.UseCors("AllowAll");
 
-// Redirigir la raíz directamente a la documentación Swagger
-app.MapGet("/", () => Results.Redirect("/swagger"));
+// Mount SOAP 1.1 / 1.2 WSDL endpoints for MS.G.PostSale
+((IApplicationBuilder)app).UseSoapEndpoint<IPostSaleSoapService>("/services/postsale.asmx", new SoapEncoderOptions(), SoapSerializer.DataContractSerializer);
+((IApplicationBuilder)app).UseSoapEndpoint<IPostSaleSoapService>("/soap/postsale.asmx", new SoapEncoderOptions(), SoapSerializer.DataContractSerializer);
 
 app.MapControllers();
 

@@ -8,6 +8,7 @@ import {
   getRoutes, createRoute, updateRoute, deleteRoute,
   loginUser, createAdminUser, getAdminUsers
 } from '../api';
+import SoapAndEventsDashboard from '../components/SoapAndEventsDashboard';
 
 export default function AdminDashboardView() {
   const [adminUser, setAdminUser] = useState(() => {
@@ -872,7 +873,8 @@ export default function AdminDashboardView() {
             { id: 'flights', label: '✈ Control de Vuelos y Ocupación' },
             { id: 'bookings', label: '📋 Pasajeros y Reservas' },
             { id: 'routes', label: '📊 Rutas Ecuador (UIO, GYE, CUE)' },
-            { id: 'admins', label: '🛡️ Administradores del Sistema' }
+            { id: 'admins', label: '🛡️ Administradores del Sistema' },
+            { id: 'soap_events', label: '🧼 SOAP PostSale & Bus RabbitMQ' }
           ].map(t => (
             <button
               key={t.id}
@@ -1540,6 +1542,13 @@ export default function AdminDashboardView() {
             </table>
           </div>
         </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* SUB-TAB 5: SOAP POST-SALE & RABBITMQ EVENT BUS            */}
+      {/* ========================================================= */}
+      {subTab === 'soap_events' && (
+        <SoapAndEventsDashboard recentBookings={filteredBookings} />
       )}
 
       {/* ========================================================= */}

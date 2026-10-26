@@ -16,11 +16,13 @@ namespace Aerocache.Business.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IBookingService _bookingService;
+        private readonly IEventBus? _eventBus;
 
-        public AdminService(IUnitOfWork uow, IBookingService bookingService)
+        public AdminService(IUnitOfWork uow, IBookingService bookingService, IEventBus? eventBus = null)
         {
             _uow = uow;
             _bookingService = bookingService;
+            _eventBus = eventBus;
         }
 
         public async Task<AdminLoginResponse> LoginAsync(AdminLoginRequest request)
@@ -151,6 +153,20 @@ namespace Aerocache.Business.Services
                 flight.LlegadaReal = DateTime.UtcNow;
 
             await _uow.CompleteAsync();
+
+            if (_eventBus != null)
+            {
+                await _eventBus.PublishAsync("flight.status_changed", new
+                {
+                    flightNumber = flight.NumeroVuelo,
+                    status = flight.Estado,
+                    route = $"{flight.OrigenIata} - {flight.DestinoIata}",
+                    scheduledDeparture = flight.SalidaProgramada,
+                    actualDeparture = flight.SalidaReal,
+                    actualArrival = flight.LlegadaReal,
+                    updatedAt = DateTime.UtcNow
+                });
+            }
 
             return new FlightStatusDto
             {
@@ -332,6 +348,21 @@ namespace Aerocache.Business.Services
 
             await _uow.Vuelos.AddAsync(flight);
             await _uow.CompleteAsync();
+
+            if (_eventBus != null)
+            {
+                await _eventBus.PublishAsync("flight.created", new
+                {
+                    flightId = flight.Id,
+                    flightNumber = flight.NumeroVuelo,
+                    origin = flight.OrigenIata,
+                    destination = flight.DestinoIata,
+                    departure = flight.SalidaProgramada,
+                    aircraft = flight.Aeronave,
+                    basePrice = basePrice,
+                    createdAt = DateTime.UtcNow
+                });
+            }
 
             return new FlightOccupancyDto
             {

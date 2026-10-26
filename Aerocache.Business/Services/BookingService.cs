@@ -15,10 +15,12 @@ namespace Aerocache.Business.Services
     public class BookingService : IBookingService
     {
         private readonly IUnitOfWork _uow;
+        private readonly IEventBus? _eventBus;
 
-        public BookingService(IUnitOfWork uow)
+        public BookingService(IUnitOfWork uow, IEventBus? eventBus = null)
         {
             _uow = uow;
+            _eventBus = eventBus;
         }
 
         public async Task<BookingDetail> CreateBookingAsync(BookingRequest request, string? idempotencyKey)
@@ -156,6 +158,21 @@ namespace Aerocache.Business.Services
 
             await _uow.Reservas.AddAsync(booking);
             await _uow.CompleteAsync();
+
+            if (_eventBus != null)
+            {
+                await _eventBus.PublishAsync("booking.confirmed", new
+                {
+                    bookingId = booking.ReservaId,
+                    pnr = booking.Pnr,
+                    status = booking.Estado,
+                    vueloId = booking.VueloId,
+                    total = booking.MontoTotalGeneral,
+                    currency = booking.Moneda,
+                    passengersCount = booking.Pasajeros.Count,
+                    createdAt = booking.FechaCreacion
+                });
+            }
 
             return await GetBookingDetailAsync(booking.ReservaId.ToString());
         }

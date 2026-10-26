@@ -1,4 +1,15 @@
-﻿services:
+services:
+  aerocache-rabbitmq:
+    container_name: aerocache-rabbitmq
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    restart: always
+
   aerocache-api:
     container_name: aerocache-api
     build:
@@ -9,6 +20,9 @@
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5200
+      - RabbitMQ__HostName=aerocache-rabbitmq
+    depends_on:
+      - aerocache-rabbitmq
     restart: always
 
   aerocache-web:

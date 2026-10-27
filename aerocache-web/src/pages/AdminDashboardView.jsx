@@ -10,7 +10,7 @@ import {
 } from '../api';
 import SoapAndEventsDashboard from '../components/SoapAndEventsDashboard';
 
-export default function AdminDashboardView() {
+export default function AdminDashboardView({ onLogout }) {
   const [adminUser, setAdminUser] = useState(() => {
     try {
       const savedUser = localStorage.getItem('aerocache_current_user');
@@ -174,6 +174,9 @@ export default function AdminDashboardView() {
     localStorage.removeItem('aerocache_current_user');
     localStorage.removeItem('aerocache_auth_token');
     setStats(null);
+    if (onLogout) {
+      onLogout();
+    }
   };
 
   const handleCreateAdminSubmit = async (e) => {
@@ -537,6 +540,24 @@ export default function AdminDashboardView() {
             • Usuario: <code>admin@aerocache.ec</code><br />
             • Clave: <code>admin123</code> (o <code>admin</code>)
           </div>
+
+          <div style={{ marginTop: '16px', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => { if (onLogout) onLogout(); }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#64748b',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                textDecoration: 'underline'
+              }}
+            >
+              ← Volver al Buscador de Vuelos
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -559,6 +580,7 @@ export default function AdminDashboardView() {
       pnr: b.pnr,
       bookingId: b.bookingId,
       passengerName: `${p0.firstName || 'Pasajero'} ${p0.lastName || ''}`.trim(),
+      email: p0.contact?.email || b.contactEmail || 'N/A',
       documentNumber: p0.documentNumber || 'N/A',
       route: b.itineraries?.[0]?.itineraryId ? b.itineraries[0].itineraryId.replace('ITIN-', '').replace(/-\d{8}$/, '') : 'Ecuador',
       totalAmount: b.grandTotal?.total ? parseFloat(b.grandTotal.total) : 0,
@@ -571,6 +593,8 @@ export default function AdminDashboardView() {
   const filteredBookings = bookingsList.filter(b => 
     b.pnr.toLowerCase().includes(searchFilter.toLowerCase()) ||
     b.passengerName.toLowerCase().includes(searchFilter.toLowerCase()) ||
+    b.email.toLowerCase().includes(searchFilter.toLowerCase()) ||
+    b.documentNumber.includes(searchFilter) ||
     b.route.toLowerCase().includes(searchFilter.toLowerCase()) ||
     b.status.toLowerCase().includes(searchFilter.toLowerCase())
   );
@@ -1082,6 +1106,7 @@ export default function AdminDashboardView() {
                 <tr style={{ backgroundColor: '#f8fafc', color: '#475569', borderBottom: '1px solid #e2e8f0', fontSize: '12px', textTransform: 'uppercase' }}>
                   <th style={{ padding: '12px 18px' }}>Código PNR</th>
                   <th style={{ padding: '12px 18px' }}>Pasajero Titular</th>
+                  <th style={{ padding: '12px 18px' }}>Correo Comprador</th>
                   <th style={{ padding: '12px 18px' }}>Cédula / Pasaporte</th>
                   <th style={{ padding: '12px 18px' }}>Ruta de Vuelo</th>
                   <th style={{ padding: '12px 18px' }}>Total Pagado</th>
@@ -1092,7 +1117,7 @@ export default function AdminDashboardView() {
               <tbody>
                 {filteredBookings.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#94a3b8' }}>
+                    <td colSpan={8} style={{ padding: '30px', textAlign: 'center', color: '#94a3b8' }}>
                       Aún no hay compras registradas en el sistema.
                     </td>
                   </tr>
@@ -1114,6 +1139,9 @@ export default function AdminDashboardView() {
                       </td>
                       <td style={{ padding: '14px 18px', fontWeight: '600', color: 'var(--color-latam-navy)' }}>
                         {b.passengerName}
+                      </td>
+                      <td style={{ padding: '14px 18px', color: '#0284c7', fontWeight: '500' }}>
+                        {b.email}
                       </td>
                       <td style={{ padding: '14px 18px', color: '#475569' }}>
                         {b.documentNumber}

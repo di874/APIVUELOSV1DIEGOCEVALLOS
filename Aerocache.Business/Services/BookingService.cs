@@ -279,9 +279,9 @@ namespace Aerocache.Business.Services
             };
         }
 
-        public async Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor)
+        public async Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor, string? email = null)
         {
-            var query = _uow.Reservas.Query().AsQueryable();
+            var query = _uow.Reservas.Query().Include(b => b.Pasajeros).AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(pnr))
                 query = query.Where(b => b.Pnr == pnr);
@@ -289,24 +289,37 @@ namespace Aerocache.Business.Services
             if (!string.IsNullOrWhiteSpace(status))
                 query = query.Where(b => b.Estado == status);
 
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                var targetEmail = email.Trim().ToLower();
+                query = query.Where(b => b.Pasajeros.Any(p => p.Correo.ToLower() == targetEmail));
+            }
+
             var list = await query.OrderByDescending(b => b.FechaCreacion).Take(Math.Min(limit, 50)).ToListAsync();
 
             return new BookingListResponse
             {
                 NextCursor = null,
-                Items = list.Select(b => new BookingSummaryItem
-                {
-                    BookingId = b.ReservaId.ToString(),
-                    Pnr = b.Pnr,
-                    Status = b.Estado,
-                    Origin = b.OrigenIata,
-                    Destination = b.DestinoIata,
-                    DepartureDate = b.FechaSalida.ToString("yyyy-MM-dd"),
-                    GrandTotal = new MoneyAmount
+                Items = list.Select(b => {
+                    var p0 = b.Pasajeros.FirstOrDefault();
+                    return new BookingSummaryItem
                     {
-                        Currency = b.Moneda,
-                        Total = b.MontoTotalGeneral.ToString("F2", CultureInfo.InvariantCulture)
-                    }
+                        BookingId = b.ReservaId.ToString(),
+                        Pnr = b.Pnr,
+                        Status = b.Estado,
+                        Origin = b.OrigenIata,
+                        Destination = b.DestinoIata,
+                        DepartureDate = b.FechaSalida.ToString("yyyy-MM-dd"),
+                        FlightNumber = b.VueloId,
+                        PassengerName = p0 != null ? $"{p0.Nombre} {p0.Apellido}".Trim() : null,
+                        ContactEmail = p0?.Correo,
+                        CreatedAt = b.FechaCreacion.ToString("o"),
+                        GrandTotal = new MoneyAmount
+                        {
+                            Currency = b.Moneda,
+                            Total = b.MontoTotalGeneral.ToString("F2", CultureInfo.InvariantCulture)
+                        }
+                    };
                 }).ToList()
             };
         }

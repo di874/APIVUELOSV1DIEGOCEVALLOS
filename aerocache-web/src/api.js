@@ -140,6 +140,17 @@ export async function createBooking(holdId, passengerData, paymentRef) {
   return await res.json();
 }
 
+export async function getMyBookings(email) {
+  let url = `${API_BASE}/bookings?limit=50`;
+  if (email) {
+    url += `&email=${encodeURIComponent(email.trim())}`;
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Error al listar reservas');
+  const data = await res.json();
+  return data.items || [];
+}
+
 export async function getBookingByPnr(pnr) {
   const res = await fetch(`${API_BASE}/bookings?pnr=${encodeURIComponent(pnr)}`);
   if (!res.ok) throw new Error('Error al listar reservas');

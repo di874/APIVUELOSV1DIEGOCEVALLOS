@@ -335,6 +335,23 @@ export default function App() {
       console.warn('Error al persistir bloqueo de asiento local:', e);
     }
 
+    // Guardar PNR en almacenamiento local del comprador
+    if (currentUser?.email && booking?.pnr) {
+      try {
+        const key = `aerocache_user_bookings_${currentUser.email.trim().toLowerCase()}`;
+        const existing = JSON.parse(localStorage.getItem(key) || '[]');
+        if (booking.isRoundTrip) {
+          if (booking.outboundPnr && !existing.includes(booking.outboundPnr)) existing.unshift(booking.outboundPnr);
+          if (booking.returnPnr && !existing.includes(booking.returnPnr)) existing.unshift(booking.returnPnr);
+        } else {
+          if (!existing.includes(booking.pnr)) existing.unshift(booking.pnr);
+        }
+        localStorage.setItem(key, JSON.stringify(existing));
+      } catch (e) {
+        console.warn('Error al guardar PNR de usuario:', e);
+      }
+    }
+
     // Auto check-in y generación de pases
     try {
       if (booking.isRoundTrip) {
@@ -389,6 +406,7 @@ export default function App() {
     localStorage.removeItem('aerocache_current_user');
     localStorage.removeItem('aerocache_auth_token');
     localStorage.removeItem('aerocache_admin_user');
+    setActiveTab('search');
   };
 
   return (
@@ -627,11 +645,21 @@ export default function App() {
         )}
 
         {activeTab === 'bookings' && (
-          <MyBookingsView onOpenBoardingPass={handleOpenExistingBoardingPass} />
+          <MyBookingsView 
+            onOpenBoardingPass={handleOpenExistingBoardingPass}
+            currentUser={currentUser}
+            onOpenAuthModal={() => { setIsAuthForBooking(false); setAuthModalOpen(true); }}
+            setActiveTab={setActiveTab}
+          />
         )}
 
         {activeTab === 'checkin' && (
-          <MyBookingsView onOpenBoardingPass={handleOpenExistingBoardingPass} />
+          <MyBookingsView 
+            onOpenBoardingPass={handleOpenExistingBoardingPass}
+            currentUser={currentUser}
+            onOpenAuthModal={() => { setIsAuthForBooking(false); setAuthModalOpen(true); }}
+            setActiveTab={setActiveTab}
+          />
         )}
 
         {activeTab === 'status' && (
@@ -639,7 +667,7 @@ export default function App() {
         )}
 
         {activeTab === 'admin' && (
-          <AdminDashboardView />
+          <AdminDashboardView onLogout={() => { handleLogout(); setActiveTab('search'); }} />
         )}
       </main>
 

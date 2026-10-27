@@ -29,9 +29,10 @@ namespace Aerocache.API.Controllers
             [FromQuery] string? createdFrom,
             [FromQuery] string? createdTo,
             [FromQuery] int limit = 10,
-            [FromQuery] string? cursor = null)
+            [FromQuery] string? cursor = null,
+            [FromQuery] string? email = null)
         {
-            var result = await _bookingService.ListBookingsAsync(pnr, status, createdFrom, createdTo, limit, cursor);
+            var result = await _bookingService.ListBookingsAsync(pnr, status, createdFrom, createdTo, limit, cursor, email);
             return Ok(result);
         }
 

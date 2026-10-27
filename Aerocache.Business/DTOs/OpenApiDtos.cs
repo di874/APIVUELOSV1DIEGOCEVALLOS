@@ -272,6 +272,10 @@ namespace Aerocache.Business.DTOs
         public string? Destination { get; set; }
         public string? DepartureDate { get; set; }
         public MoneyAmount? GrandTotal { get; set; }
+        public string? FlightNumber { get; set; }
+        public string? PassengerName { get; set; }
+        public string? ContactEmail { get; set; }
+        public string? CreatedAt { get; set; }
     }
 
     public class BookingListResponse

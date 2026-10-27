@@ -522,4 +522,75 @@ namespace Aerocache.DataAccess.Entities
         [Column("FechaCreacion")]
         public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
     }
+
+    [Table("ContratosPromociones")]
+    public class ContratoPromociones
+    {
+        [Key]
+        [Column("ProveedorCodigo")]
+        public string ProveedorCodigo { get; set; } = "NODE_VUE_ECOAIRLINES";
+
+        [Column("NombreSocio")]
+        public string NombreSocio { get; set; } = "EcoAirlines";
+
+        [Column("Vertical")]
+        public string Vertical { get; set; } = "VUELOS";
+
+        [Column("Activo")]
+        public bool Activo { get; set; } = true;
+
+        [Column("DescuentoPorcentaje")]
+        public decimal DescuentoPorcentaje { get; set; } = 12.0m;
+
+        [Column("DestinosHabilitadosJson")]
+        public string DestinosHabilitadosJson { get; set; } = "[\"Quito\",\"Guayaquil\",\"Cuenca\",\"Galápagos\"]";
+
+        [Column("RutasHabilitadasJson")]
+        public string RutasHabilitadasJson { get; set; } = "[\"UIO-GYE\",\"GYE-UIO\",\"UIO-CUE\"]";
+
+        [Column("CabinasHabilitadasJson")]
+        public string CabinasHabilitadasJson { get; set; } = "[\"ECONOMY\"]";
+
+        [Column("VigenciaHasta")]
+        public string VigenciaHasta { get; set; } = "2026-12-31";
+
+        [Column("CondicionesCombo")]
+        public string? CondicionesCombo { get; set; } = "Descuento de hasta 12% en combos vuelo + hotel o vuelo + auto; no aplica en feriados.";
+
+        [Column("ActualizadoEn")]
+        public DateTime ActualizadoEn { get; set; } = DateTime.UtcNow;
+    }
+
+    [Table("EventosPublicados")]
+    public class EventoPublicado
+    {
+        [Key]
+        [Column("Id")]
+        public string Id { get; set; } = "evt-vue-" + Guid.NewGuid().ToString("N")[..8];
+
+        [Column("SpecVersion")]
+        public string SpecVersion { get; set; } = "1.0";
+
+        [Column("Type")]
+        public string Type { get; set; } = string.Empty;
+
+        [Column("Source")]
+        public string Source { get; set; } = "/aerolineas/ecoairlines/vuelos";
+
+        [Column("Time")]
+        public DateTime Time { get; set; } = DateTime.UtcNow;
+
+        [Column("Subject")]
+        public string? Subject { get; set; }
+
+        [Column("DataContentType")]
+        public string DataContentType { get; set; } = "application/json";
+
+        [Column("CorrelationId")]
+        public string? CorrelationId { get; set; }
+
+        [Column("DataJson")]
+        public string DataJson { get; set; } = "{}";
+    }
 }
+

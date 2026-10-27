@@ -7,6 +7,7 @@ namespace Aerocache.API.Controllers
 {
     [ApiController]
     [Route("flights")]
+    [Route("vuelos/flights")]
     public class FlightsController : ControllerBase
     {
         private readonly IFlightStatusService _statusService;
@@ -26,6 +27,22 @@ namespace Aerocache.API.Controllers
         public async Task<IActionResult> GetFlightStatus([FromRoute] string flightNumber, [FromQuery] string date)
         {
             var result = await _statusService.GetFlightStatusAsync(flightNumber, date);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Cambiar el estado operativo de un vuelo (rol OPS / ADMIN)
+        /// </summary>
+        [HttpPatch("{flightNumber}/status")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(FlightStatusUpdateResponse), 200)]
+        [ProducesResponseType(typeof(ProblemDetailsDto), 404)]
+        public async Task<IActionResult> UpdateFlightStatus(
+            [FromRoute] string flightNumber,
+            [FromBody] FlightStatusUpdateRequest request,
+            [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+        {
+            var result = await _statusService.UpdateFlightStatusAsync(flightNumber, request, idempotencyKey);
             return Ok(result);
         }
     }

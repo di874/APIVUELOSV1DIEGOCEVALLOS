@@ -17,6 +17,8 @@ using Aerocache.DataAccess.Seed;
 using Aerocache.DataManagement;
 using SoapCore;
 
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Support dynamic port provided by hosting environments like Render ($PORT)
@@ -104,23 +106,26 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AerocacheDbContext>();
-    context.Database.EnsureCreated();
+    if (context.Database.IsSqlite())
+    {
+        context.Database.EnsureCreated();
 
-    // Ensure Usuarios table exists in SQLite
-    context.Database.ExecuteSqlRaw(@"
-        CREATE TABLE IF NOT EXISTS ""Usuarios"" (
-            ""Id"" TEXT NOT NULL CONSTRAINT ""PK_Usuarios"" PRIMARY KEY,
-            ""Nombre"" TEXT NOT NULL,
-            ""Apellido"" TEXT NOT NULL,
-            ""Email"" TEXT NOT NULL,
-            ""PasswordHash"" TEXT NOT NULL,
-            ""Rol"" TEXT NOT NULL,
-            ""Documento"" TEXT NULL,
-            ""Telefono"" TEXT NULL,
-            ""FechaCreacion"" TEXT NOT NULL
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Usuarios_Email"" ON ""Usuarios"" (""Email"");
-    ");
+        // Ensure Usuarios table exists in SQLite
+        context.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""Usuarios"" (
+                ""Id"" TEXT NOT NULL CONSTRAINT ""PK_Usuarios"" PRIMARY KEY,
+                ""Nombre"" TEXT NOT NULL,
+                ""Apellido"" TEXT NOT NULL,
+                ""Email"" TEXT NOT NULL,
+                ""PasswordHash"" TEXT NOT NULL,
+                ""Rol"" TEXT NOT NULL,
+                ""Documento"" TEXT NULL,
+                ""Telefono"" TEXT NULL,
+                ""FechaCreacion"" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Usuarios_Email"" ON ""Usuarios"" (""Email"");
+        ");
+    }
 
     AerocacheDataSeeder.SeedData(context);
 }

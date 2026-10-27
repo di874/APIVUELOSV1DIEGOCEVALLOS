@@ -20,26 +20,30 @@ namespace Aerocache.DataAccess.Context
         public DbSet<SuscripcionWebhook> SuscripcionesWebhooks => Set<SuscripcionWebhook>();
         public DbSet<RegistroIdempotencia> RegistrosIdempotencia => Set<RegistroIdempotencia>();
         public DbSet<Usuario> Usuarios => Set<Usuario>();
+        public DbSet<ContratoPromociones> ContratosPromociones => Set<ContratoPromociones>();
+        public DbSet<EventoPublicado> EventosPublicados => Set<EventoPublicado>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<Usuario>().ToTable("Usuarios").HasKey(x => x.Id);
+            modelBuilder.Entity<Usuario>().ToTable("Usuarios", "identity").HasKey(x => x.Id);
             modelBuilder.Entity<Usuario>().HasIndex(x => x.Email).IsUnique();
 
-            modelBuilder.Entity<Vuelo>().ToTable("Vuelos").HasKey(x => x.Id);
-            modelBuilder.Entity<TarifaCabina>().ToTable("TarifasCabina").HasKey(x => x.Id);
-            modelBuilder.Entity<Asiento>().ToTable("Asientos").HasKey(x => x.Id);
-            modelBuilder.Entity<BloqueoTemporal>().ToTable("BloqueosTemporales").HasKey(x => x.BloqueoId);
-            modelBuilder.Entity<Reserva>().ToTable("Reservas").HasKey(x => x.ReservaId);
-            modelBuilder.Entity<Pasajero>().ToTable("Pasajeros").HasKey(x => x.Id);
-            modelBuilder.Entity<Boleto>().ToTable("Boletos").HasKey(x => x.BoletoId);
-            modelBuilder.Entity<PaseAbordar>().ToTable("PasesAbordar").HasKey(x => x.Id);
-            modelBuilder.Entity<CotizacionCancelacion>().ToTable("CotizacionesCancelacion").HasKey(x => x.CotizacionId);
-            modelBuilder.Entity<OfertaCambioFecha>().ToTable("OfertasCambioFecha").HasKey(x => x.OfertaCambioId);
-            modelBuilder.Entity<SuscripcionWebhook>().ToTable("SuscripcionesWebhooks").HasKey(x => x.Id);
-            modelBuilder.Entity<RegistroIdempotencia>().ToTable("RegistrosIdempotencia").HasKey(x => x.Clave);
+            modelBuilder.Entity<Vuelo>().ToTable("Vuelos", "schedule").HasKey(x => x.Id);
+            modelBuilder.Entity<TarifaCabina>().ToTable("TarifasCabina", "offers").HasKey(x => x.Id);
+            modelBuilder.Entity<Asiento>().ToTable("Asientos", "offers").HasKey(x => x.Id);
+            modelBuilder.Entity<BloqueoTemporal>().ToTable("BloqueosTemporales", "offers").HasKey(x => x.BloqueoId);
+            modelBuilder.Entity<Reserva>().ToTable("Reservas", "bookings").HasKey(x => x.ReservaId);
+            modelBuilder.Entity<Pasajero>().ToTable("Pasajeros", "bookings").HasKey(x => x.Id);
+            modelBuilder.Entity<Boleto>().ToTable("Boletos", "bookings").HasKey(x => x.BoletoId);
+            modelBuilder.Entity<PaseAbordar>().ToTable("PasesAbordar", "check_in").HasKey(x => x.Id);
+            modelBuilder.Entity<CotizacionCancelacion>().ToTable("CotizacionesCancelacion", "post_sale").HasKey(x => x.CotizacionId);
+            modelBuilder.Entity<OfertaCambioFecha>().ToTable("OfertasCambioFecha", "post_sale").HasKey(x => x.OfertaCambioId);
+            modelBuilder.Entity<SuscripcionWebhook>().ToTable("SuscripcionesWebhooks", "webhooks").HasKey(x => x.Id);
+            modelBuilder.Entity<RegistroIdempotencia>().ToTable("RegistrosIdempotencia", "bookings").HasKey(x => x.Clave);
+            modelBuilder.Entity<ContratoPromociones>().ToTable("ContratosPromociones", "offers").HasKey(x => x.ProveedorCodigo);
+            modelBuilder.Entity<EventoPublicado>().ToTable("EventosPublicados", "webhooks").HasKey(x => x.Id);
 
             modelBuilder.Entity<Vuelo>()
                 .HasMany(f => f.TarifasCabina)

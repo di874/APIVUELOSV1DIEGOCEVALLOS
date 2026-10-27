@@ -8,6 +8,7 @@ namespace Aerocache.API.Controllers
 {
     [ApiController]
     [Route("webhooks")]
+    [Route("vuelos/webhooks")]
     public class WebhooksController : ControllerBase
     {
         private readonly IWebhookService _webhookService;

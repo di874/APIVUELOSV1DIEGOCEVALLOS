@@ -7,6 +7,7 @@ namespace Aerocache.API.Controllers
 {
     [ApiController]
     [Route("offers")]
+    [Route("vuelos/offers")]
     public class OffersController : ControllerBase
     {
         private readonly IHoldService _holdService;

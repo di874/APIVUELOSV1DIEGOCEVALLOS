@@ -444,5 +444,269 @@ namespace Aerocache.Business.DTOs
         public string SeatNumber { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;
     }
+
+    // ==========================================
+    // NUEVOS DTOs OPENAPI V2
+    // ==========================================
+
+    public class VuelosHealthDependency
+    {
+        [JsonPropertyName("nombre")]
+        public string Nombre { get; set; } = string.Empty;
+
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = "UP"; // UP, DOWN, DEGRADED
+
+        [JsonPropertyName("latencia_ms")]
+        public int LatenciaMs { get; set; } = 5;
+    }
+
+    public class VuelosHealthResponse
+    {
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = "HEALTHY"; // HEALTHY, DEGRADED, DOWN
+
+        [JsonPropertyName("nodo_id")]
+        public string NodoId { get; set; } = "NODE_VUE_ECOAIRLINES";
+
+        [JsonPropertyName("nombre_proveedor")]
+        public string NombreProveedor { get; set; } = "EcoAirlines";
+
+        [JsonPropertyName("vertical")]
+        public string Vertical { get; set; } = "VUELOS";
+
+        [JsonPropertyName("version")]
+        public string Version { get; set; } = "2.0.0";
+
+        [JsonPropertyName("uptime_seconds")]
+        public long UptimeSeconds { get; set; }
+
+        [JsonPropertyName("latencia_ms")]
+        public int LatenciaMs { get; set; } = 15;
+
+        [JsonPropertyName("circuit_breaker_estado")]
+        public string CircuitBreakerEstado { get; set; } = "CLOSED";
+
+        [JsonPropertyName("holds_activos_count")]
+        public int HoldsActivosCount { get; set; }
+
+        [JsonPropertyName("vuelos_programados_hoy")]
+        public int VuelosProgramadosHoy { get; set; }
+
+        [JsonPropertyName("dependencias")]
+        public List<VuelosHealthDependency> Dependencias { get; set; } = new();
+
+        [JsonPropertyName("timestamp")]
+        public string Timestamp { get; set; } = DateTime.UtcNow.ToString("o");
+    }
+
+    public class VuelosCloudEvent
+    {
+        [JsonPropertyName("specversion")]
+        public string SpecVersion { get; set; } = "1.0";
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = string.Empty;
+
+        [JsonPropertyName("source")]
+        public string Source { get; set; } = "/aerolineas/ecoairlines/vuelos";
+
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = string.Empty;
+
+        [JsonPropertyName("time")]
+        public string Time { get; set; } = DateTime.UtcNow.ToString("o");
+
+        [JsonPropertyName("subject")]
+        public string? Subject { get; set; }
+
+        [JsonPropertyName("datacontenttype")]
+        public string DataContentType { get; set; } = "application/json";
+
+        [JsonPropertyName("correlationid")]
+        public string? CorrelationId { get; set; }
+
+        [JsonPropertyName("data")]
+        public object? Data { get; set; }
+    }
+
+    public class VuelosEventosMetadata
+    {
+        [JsonPropertyName("total")]
+        public int Total { get; set; }
+
+        [JsonPropertyName("next_after")]
+        public string? NextAfter { get; set; }
+
+        [JsonPropertyName("timestamp")]
+        public string Timestamp { get; set; } = DateTime.UtcNow.ToString("o");
+    }
+
+    public class VuelosEventosResponse
+    {
+        [JsonPropertyName("events")]
+        public List<VuelosCloudEvent> Events { get; set; } = new();
+
+        [JsonPropertyName("metadata")]
+        public VuelosEventosMetadata Metadata { get; set; } = new();
+    }
+
+    public class ContratoPromocionesRequest
+    {
+        [JsonPropertyName("activo")]
+        public bool Activo { get; set; } = true;
+
+        [JsonPropertyName("descuento_porcentaje")]
+        public decimal DescuentoPorcentaje { get; set; } = 12.0m;
+
+        [JsonPropertyName("destinos_habilitados")]
+        public List<string> DestinosHabilitados { get; set; } = new();
+
+        [JsonPropertyName("rutas_habilitadas")]
+        public List<string> RutasHabilitadas { get; set; } = new();
+
+        [JsonPropertyName("cabinas_habilitadas")]
+        public List<string> CabinasHabilitadas { get; set; } = new();
+
+        [JsonPropertyName("vigencia_hasta")]
+        public string VigenciaHasta { get; set; } = "2026-12-31";
+
+        [JsonPropertyName("condiciones_combo")]
+        public string? CondicionesCombo { get; set; }
+    }
+
+    public class ContratoPromocionesResponse : ContratoPromocionesRequest
+    {
+        [JsonPropertyName("proveedor_codigo")]
+        public string ProveedorCodigo { get; set; } = "NODE_VUE_ECOAIRLINES";
+
+        [JsonPropertyName("nombre_socio")]
+        public string NombreSocio { get; set; } = "EcoAirlines";
+
+        [JsonPropertyName("vertical")]
+        public string Vertical { get; set; } = "VUELOS";
+
+        [JsonPropertyName("actualizado_en")]
+        public string ActualizadoEn { get; set; } = DateTime.UtcNow.ToString("o");
+    }
+
+    public class ContratoPromocionesUpdateResponse
+    {
+        [JsonPropertyName("success")]
+        public bool Success { get; set; } = true;
+
+        [JsonPropertyName("mensaje")]
+        public string Mensaje { get; set; } = "Acuerdo B2B de promociones de vuelos actualizado exitosamente.";
+
+        [JsonPropertyName("contrato")]
+        public ContratoPromocionesResponse Contrato { get; set; } = new();
+    }
+
+    public class CabinInventoryItem
+    {
+        public string CabinClass { get; set; } = "ECONOMY";
+        public int TotalSeats { get; set; }
+        public Dictionary<string, int> SeatsByStatus { get; set; } = new();
+    }
+
+    public class FlightAlertItem
+    {
+        public string Code { get; set; } = "LOW_AVAILABILITY";
+        public string Severity { get; set; } = "INFO";
+        public string Message { get; set; } = string.Empty;
+    }
+
+    public class FlightInventoryItem
+    {
+        public string FlightNumber { get; set; } = string.Empty;
+        public string Date { get; set; } = string.Empty;
+        public string Origin { get; set; } = string.Empty;
+        public string Destination { get; set; } = string.Empty;
+        public string DepartureAt { get; set; } = string.Empty;
+        public string Status { get; set; } = "SCHEDULED";
+        public string Aircraft { get; set; } = "Airbus A320";
+        public int TotalSeats { get; set; }
+        public double LoadFactor { get; set; }
+        public List<CabinInventoryItem> Cabins { get; set; } = new();
+        public int ActiveHolds { get; set; }
+        public string? NextHoldExpiryAt { get; set; }
+        public bool CheckInOpen { get; set; }
+        public List<FlightAlertItem> Alerts { get; set; } = new();
+    }
+
+    public class FlightOperationsResponse
+    {
+        public string Date { get; set; } = string.Empty;
+        public int TotalFlights { get; set; }
+        public string? NextCursor { get; set; }
+        public List<FlightInventoryItem> Items { get; set; } = new();
+    }
+
+    public class FlightStatusUpdateRequest
+    {
+        public string Date { get; set; } = string.Empty;
+        public string Status { get; set; } = "ON_TIME";
+        public string? EstimatedDepartureAt { get; set; }
+        public string? EstimatedArrivalAt { get; set; }
+        public string? DepartureGate { get; set; }
+        public string? Reason { get; set; }
+    }
+
+    public class FlightStatusUpdateResponse
+    {
+        public string PreviousStatus { get; set; } = "SCHEDULED";
+        public FlightStatusDto Flight { get; set; } = new();
+        public int AffectedBookings { get; set; }
+        public string EventId { get; set; } = string.Empty;
+    }
+
+    public class TicketIssuanceResponse
+    {
+        public string BookingId { get; set; } = string.Empty;
+        public string Pnr { get; set; } = string.Empty;
+        public string Status { get; set; } = "CONFIRMED";
+        public List<TicketDto> Tickets { get; set; } = new();
+        public int Issued { get; set; }
+        public Dictionary<string, LinkDto>? _Links { get; set; }
+    }
+
+    public class SeatChangeRequestItem
+    {
+        public string PassengerId { get; set; } = string.Empty;
+        public string SegmentId { get; set; } = string.Empty;
+        public string SeatNumber { get; set; } = string.Empty;
+    }
+
+    public class SeatChangeRequest
+    {
+        public List<SeatChangeRequestItem> Seats { get; set; } = new();
+        public object? Payment { get; set; }
+    }
+
+    public class SeatChangeItemResponse
+    {
+        public string PassengerId { get; set; } = string.Empty;
+        public string SegmentId { get; set; } = string.Empty;
+        public string? PreviousSeatNumber { get; set; }
+        public string SeatNumber { get; set; } = string.Empty;
+        public string Status { get; set; } = "CONFIRMED";
+    }
+
+    public class LinkDto
+    {
+        [JsonPropertyName("href")]
+        public string Href { get; set; } = string.Empty;
+
+        [JsonPropertyName("method")]
+        public string? Method { get; set; } = "GET";
+    }
+
+    public class SeatChangeResponse
+    {
+        public string BookingId { get; set; } = string.Empty;
+        public List<SeatChangeItemResponse> Seats { get; set; } = new();
+        public MoneyAmount AmountCharged { get; set; } = new();
+        public Dictionary<string, LinkDto>? _Links { get; set; }
+    }
 }
 

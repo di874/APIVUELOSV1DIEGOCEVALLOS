@@ -17,6 +17,7 @@ namespace Aerocache.Business
             services.AddScoped<IWebhookService, WebhookService>();
             services.AddScoped<IAdminService, AdminService>();
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IVuelosService, VuelosService>();
 
             // Event Bus RabbitMQ
             services.AddSingleton<IEventBus, RabbitMqEventBus>();

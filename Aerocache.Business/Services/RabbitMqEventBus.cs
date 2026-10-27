@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using Aerocache.Business.Interfaces;
@@ -14,6 +15,7 @@ namespace Aerocache.Business.Services
     {
         private readonly IConfiguration _config;
         private readonly ILogger<RabbitMqEventBus> _logger;
+        private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly string _exchangeName;
         private readonly ConnectionFactory _factory;
         private IConnection? _connection;
@@ -21,10 +23,11 @@ namespace Aerocache.Business.Services
         private readonly SemaphoreSlim _semaphore = new(1, 1);
         private bool _isInitialized;
 
-        public RabbitMqEventBus(IConfiguration config, ILogger<RabbitMqEventBus> logger)
+        public RabbitMqEventBus(IConfiguration config, ILogger<RabbitMqEventBus> logger, IServiceScopeFactory serviceScopeFactory)
         {
             _config = config;
             _logger = logger;
+            _serviceScopeFactory = serviceScopeFactory;
             _exchangeName = _config["RabbitMQ:ExchangeName"] ?? "aerocache.events";
 
             var host = _config["RabbitMQ:HostName"] ?? "localhost";
@@ -127,6 +130,31 @@ namespace Aerocache.Business.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error al publicar evento '{Key}' a RabbitMQ. El sistema continúa operando normalmente.", routingKey);
+            }
+
+            // Persistir evento en tabla EventosPublicados en Supabase
+            try
+            {
+                using var scope = _serviceScopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<Aerocache.DataAccess.Context.AerocacheDbContext>();
+                var pubEvt = new Aerocache.DataAccess.Entities.EventoPublicado
+                {
+                    Id = evt.EventId.StartsWith("evt-vue-") ? evt.EventId : "evt-vue-" + evt.EventId[..Math.Min(8, evt.EventId.Length)],
+                    SpecVersion = "1.0",
+                    Type = routingKey.StartsWith("ec.edu") ? routingKey : $"ec.edu.epn.booking.vuelos.{routingKey}",
+                    Source = "/aerolineas/ecoairlines/vuelos",
+                    Time = evt.Timestamp,
+                    Subject = routingKey,
+                    DataContentType = "application/json",
+                    CorrelationId = "corr-vuelos-" + Guid.NewGuid().ToString("N")[..8],
+                    DataJson = JsonSerializer.Serialize(eventData)
+                };
+                db.EventosPublicados.Add(pubEvt);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception exDb)
+            {
+                _logger.LogWarning(exDb, "No se pudo registrar evento en EventosPublicados en Supabase.");
             }
         }
 

@@ -7,6 +7,7 @@ namespace Aerocache.API.Controllers
 {
     [ApiController]
     [Route("")]
+    [Route("vuelos")]
     public class SearchController : ControllerBase
     {
         private readonly IFlightSearchService _searchService;

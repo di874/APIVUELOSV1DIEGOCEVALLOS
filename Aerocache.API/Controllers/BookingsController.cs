@@ -7,6 +7,7 @@ namespace Aerocache.API.Controllers
 {
     [ApiController]
     [Route("bookings")]
+    [Route("vuelos/bookings")]
     public class BookingsController : ControllerBase
     {
         private readonly IBookingService _bookingService;
@@ -85,6 +86,38 @@ namespace Aerocache.API.Controllers
         public async Task<IActionResult> GetTicket([FromRoute] string bookingId, [FromRoute] string ticketId)
         {
             var result = await _bookingService.GetTicketAsync(bookingId, ticketId);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Emitir los boletos de una reserva
+        /// </summary>
+        [HttpPost("{bookingId}/tickets")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(TicketIssuanceResponse), 200)]
+        [ProducesResponseType(typeof(ProblemDetailsDto), 404)]
+        public async Task<IActionResult> IssueTickets(
+            [FromRoute] string bookingId,
+            [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+        {
+            var result = await _bookingService.IssueTicketsAsync(bookingId, idempotencyKey);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Asignar o cambiar asientos de los pasajeros
+        /// </summary>
+        [HttpPut("{bookingId}/seats")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(SeatChangeResponse), 200)]
+        [ProducesResponseType(typeof(ProblemDetailsDto), 400)]
+        [ProducesResponseType(typeof(ProblemDetailsDto), 404)]
+        public async Task<IActionResult> ChangeSeats(
+            [FromRoute] string bookingId,
+            [FromBody] SeatChangeRequest request,
+            [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+        {
+            var result = await _bookingService.ChangeSeatsV2Async(bookingId, request, idempotencyKey);
             return Ok(result);
         }
     }

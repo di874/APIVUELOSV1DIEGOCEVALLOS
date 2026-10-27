@@ -25,6 +25,8 @@ namespace Aerocache.Business.Interfaces
         Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor);
         Task<TicketListResponse> GetBookingTicketsAsync(string bookingId);
         Task<TicketDto> GetTicketAsync(string bookingId, string ticketId);
+        Task<TicketIssuanceResponse> IssueTicketsAsync(string bookingId, string? idempotencyKey);
+        Task<SeatChangeResponse> ChangeSeatsV2Async(string bookingId, SeatChangeRequest request, string? idempotencyKey);
     }
 
     public interface IPostSaleService
@@ -47,6 +49,8 @@ namespace Aerocache.Business.Interfaces
     public interface IFlightStatusService
     {
         Task<FlightStatusDto> GetFlightStatusAsync(string flightNumber, string date);
+        Task<FlightStatusUpdateResponse> UpdateFlightStatusAsync(string flightNumber, FlightStatusUpdateRequest request, string? idempotencyKey);
+        Task<FlightOperationsResponse> GetFlightOperationsAsync(string? date, string? origin, string? destination, string? status, int limit, string? cursor);
     }
 
     public interface IWebhookService
@@ -54,5 +58,13 @@ namespace Aerocache.Business.Interfaces
         Task<List<WebhookSubscriptionDto>> ListSubscriptionsAsync();
         Task<WebhookSubscriptionDto> CreateSubscriptionAsync(WebhookSubscriptionDto subscription);
         Task DeleteSubscriptionAsync(string id);
+    }
+
+    public interface IVuelosService
+    {
+        Task<VuelosHealthResponse> GetHealthAsync();
+        Task<VuelosEventosResponse> GetEventosAsync(int limit, string? after);
+        Task<ContratoPromocionesResponse> GetContratoPromocionesAsync();
+        Task<ContratoPromocionesUpdateResponse> UpdateContratoPromocionesAsync(ContratoPromocionesRequest request);
     }
 }

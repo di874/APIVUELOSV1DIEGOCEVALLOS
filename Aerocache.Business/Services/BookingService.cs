@@ -360,5 +360,154 @@ namespace Aerocache.Business.Services
                 }
             };
         }
+
+        public async Task<TicketIssuanceResponse> IssueTicketsAsync(string bookingId, string? idempotencyKey)
+        {
+            var isGuid = Guid.TryParse(bookingId, out var id);
+            var booking = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
+                .Include(b => b.Boletos)
+                .FirstOrDefaultAsync(b => (isGuid && b.ReservaId == id) || b.Pnr == bookingId);
+
+            if (booking == null)
+            {
+                throw new AerocacheProblemException(404, "BOOKING_NOT_FOUND", "Reserva no encontrada");
+            }
+
+            int issuedCount = 0;
+            foreach (var p in booking.Pasajeros)
+            {
+                var existingTicket = booking.Boletos.FirstOrDefault(t => t.PasajeroId == p.Id);
+                if (existingTicket == null)
+                {
+                    var ticket = new Boleto
+                    {
+                        ReservaId = booking.ReservaId,
+                        PasajeroId = p.Id,
+                        NumeroBoletoElectronico = "045-" + new Random().Next(100000000, 999999999).ToString(),
+                        Estado = "ISSUED",
+                        FechaEmision = DateTime.UtcNow,
+                        SegmentoId = "SEG-" + (booking.VueloId ?? "UIO-GYE"),
+                        NumeroCupon = "CP-1"
+                    };
+                    await _uow.Boletos.AddAsync(ticket);
+                    booking.Boletos.Add(ticket);
+                    issuedCount++;
+                }
+                else if (existingTicket.Estado != "ISSUED")
+                {
+                    existingTicket.Estado = "ISSUED";
+                    existingTicket.FechaEmision = DateTime.UtcNow;
+                    issuedCount++;
+                }
+            }
+
+            booking.Estado = "CONFIRMED";
+            booking.FechaActualizacion = DateTime.UtcNow;
+            await _uow.CompleteAsync();
+
+            if (_eventBus != null)
+            {
+                await _eventBus.PublishAsync("ec.edu.epn.booking.vuelos.ticket.issued", new
+                {
+                    bookingId = booking.ReservaId.ToString(),
+                    pnr = booking.Pnr,
+                    issuedTickets = issuedCount,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+
+            return new TicketIssuanceResponse
+            {
+                BookingId = booking.ReservaId.ToString(),
+                Pnr = booking.Pnr,
+                Status = booking.Estado,
+                Issued = issuedCount,
+                Tickets = booking.Boletos.Select(t => new TicketDto
+                {
+                    TicketId = t.BoletoId,
+                    BookingId = t.ReservaId.ToString(),
+                    PassengerId = t.PasajeroId,
+                    ETicketNumber = t.NumeroBoletoElectronico,
+                    Status = t.Estado,
+                    IssuedAt = t.FechaEmision.ToString("o"),
+                    Segments = new List<TicketSegmentDto>
+                    {
+                        new() { SegmentId = t.SegmentoId, Status = t.Estado, CouponNumber = t.NumeroCupon }
+                    }
+                }).ToList(),
+                _Links = new Dictionary<string, LinkDto>
+                {
+                    ["self"] = new LinkDto { Href = $"/vuelos/bookings/{booking.ReservaId}/tickets" },
+                    ["booking"] = new LinkDto { Href = $"/vuelos/bookings/{booking.ReservaId}" }
+                }
+            };
+        }
+
+        public async Task<SeatChangeResponse> ChangeSeatsV2Async(string bookingId, SeatChangeRequest request, string? idempotencyKey)
+        {
+            var isGuid = Guid.TryParse(bookingId, out var id);
+            var booking = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
+                .FirstOrDefaultAsync(b => (isGuid && b.ReservaId == id) || b.Pnr == bookingId);
+
+            if (booking == null)
+            {
+                throw new AerocacheProblemException(404, "BOOKING_NOT_FOUND", "Reserva no encontrada");
+            }
+
+            if (request.Seats == null || !request.Seats.Any())
+            {
+                throw new AerocacheProblemException(400, "INVALID_SEAT_REQUEST", "Debe proporcionar al menos un asiento a asignar.");
+            }
+
+            var responseItems = new List<SeatChangeItemResponse>();
+
+            foreach (var seatReq in request.Seats)
+            {
+                var passenger = booking.Pasajeros.FirstOrDefault(p => p.Id == seatReq.PassengerId)
+                                ?? booking.Pasajeros.FirstOrDefault();
+
+                if (passenger == null) continue;
+
+                var prev = passenger.NumeroAsientoAsignado;
+                passenger.NumeroAsientoAsignado = seatReq.SeatNumber.Trim().ToUpperInvariant();
+
+                responseItems.Add(new SeatChangeItemResponse
+                {
+                    PassengerId = passenger.Id,
+                    SegmentId = seatReq.SegmentId ?? $"SEG-{booking.VueloId}",
+                    PreviousSeatNumber = prev,
+                    SeatNumber = passenger.NumeroAsientoAsignado,
+                    Status = "CONFIRMED"
+                });
+            }
+
+            booking.FechaActualizacion = DateTime.UtcNow;
+            await _uow.CompleteAsync();
+
+            if (_eventBus != null)
+            {
+                await _eventBus.PublishAsync("ec.edu.epn.booking.vuelos.booking.changed", new
+                {
+                    bookingId = booking.ReservaId.ToString(),
+                    pnr = booking.Pnr,
+                    seatsChanged = responseItems.Count,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+
+            return new SeatChangeResponse
+            {
+                BookingId = booking.ReservaId.ToString(),
+                Seats = responseItems,
+                AmountCharged = new MoneyAmount { Currency = booking.Moneda ?? "USD", Total = "0.00" },
+                _Links = new Dictionary<string, LinkDto>
+                {
+                    ["self"] = new LinkDto { Href = $"/vuelos/bookings/{booking.ReservaId}/seats" },
+                    ["booking"] = new LinkDto { Href = $"/vuelos/bookings/{booking.ReservaId}" }
+                }
+            };
+        }
     }
 }

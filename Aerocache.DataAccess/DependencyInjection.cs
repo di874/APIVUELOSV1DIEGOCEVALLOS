@@ -12,7 +12,18 @@ namespace Aerocache.DataAccess
             var connectionString = configuration.GetConnectionString("DefaultConnection") ?? "Data Source=aerocache.db";
 
             services.AddDbContext<AerocacheDbContext>(options =>
-                options.UseSqlite(connectionString));
+            {
+                if (!string.IsNullOrEmpty(connectionString) && 
+                    (connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase) || 
+                     connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase)))
+                {
+                    options.UseNpgsql(connectionString);
+                }
+                else
+                {
+                    options.UseSqlite(connectionString);
+                }
+            });
 
             return services;
         }

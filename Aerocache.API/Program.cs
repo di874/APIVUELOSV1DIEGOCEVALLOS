@@ -143,10 +143,14 @@ app.UseSwaggerUI(c =>
 
 app.UseCors("AllowAll");
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 // Mount SOAP 1.1 / 1.2 WSDL endpoints for MS.G.PostSale
 ((IApplicationBuilder)app).UseSoapEndpoint<IPostSaleSoapService>("/services/postsale.asmx", new SoapEncoderOptions(), SoapSerializer.DataContractSerializer);
 ((IApplicationBuilder)app).UseSoapEndpoint<IPostSaleSoapService>("/soap/postsale.asmx", new SoapEncoderOptions(), SoapSerializer.DataContractSerializer);
 
 app.MapControllers();
+app.MapFallbackToFile("index.html");
 
 app.Run();

@@ -1,8 +1,8 @@
 const API_BASE = window.AEROCACHE_API_URL 
   || import.meta.env.VITE_API_URL 
-  || (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  || (typeof window !== 'undefined' && window.location.port === '5173'
       ? 'http://localhost:5200' 
-      : 'https://apivuelosv1diegocevallos.onrender.com');
+      : (typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://apivuelosv1diegocevallos.onrender.com'));
 
 export async function searchFlights({ origin, destination, departureDate, passengers }) {
   const body = {

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Aerocache.Business.DTOs;
 using Aerocache.Business.Exceptions;
+using Aerocache.Business.Helpers;
 using Aerocache.Business.Interfaces;
 using Aerocache.DataManagement.Interfaces;
 
@@ -34,6 +35,8 @@ namespace Aerocache.Business.Services
             if (!DateTime.TryParse(date, out queryDate))
                 queryDate = DateTime.UtcNow.Date;
 
+            var dynamicStatus = FlightStatusCalculator.ComputeStatus(flight.SalidaProgramada, flight.DuracionMinutos, flight.Estado, queryDate);
+
             return new FlightStatusDto
             {
                 FlightNumber = flight.NumeroVuelo,
@@ -41,7 +44,7 @@ namespace Aerocache.Business.Services
                 MarketingCarrier = flight.AerolineaComercial,
                 OperatingCarrier = flight.AerolineaOperadora,
                 Aircraft = flight.Aeronave,
-                Status = flight.Estado,
+                Status = dynamicStatus,
                 Departure = new FlightStatusEndpoint
                 {
                     IataCode = flight.OrigenIata,
@@ -176,6 +179,8 @@ namespace Aerocache.Business.Services
                     });
                 }
 
+                var dynamicStatus = FlightStatusCalculator.ComputeStatus(f.SalidaProgramada, f.DuracionMinutos, f.Estado, filterDate);
+
                 items.Add(new FlightInventoryItem
                 {
                     FlightNumber = f.NumeroVuelo,
@@ -183,7 +188,7 @@ namespace Aerocache.Business.Services
                     Origin = f.OrigenIata,
                     Destination = f.DestinoIata,
                     DepartureAt = f.SalidaProgramada.ToString("o"),
-                    Status = f.Estado,
+                    Status = dynamicStatus,
                     Aircraft = f.Aeronave,
                     TotalSeats = totalSeats,
                     LoadFactor = loadFactor,

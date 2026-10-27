@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Aerocache.Business.DTOs;
 using Aerocache.Business.Exceptions;
+using Aerocache.Business.Helpers;
 using Aerocache.Business.Interfaces;
 using Aerocache.DataAccess.Entities;
 using Aerocache.DataManagement.Interfaces;
@@ -70,6 +71,7 @@ namespace Aerocache.Business.Services
             {
                 var offerId = $"OFF-{flight.Id}";
                 var segmentId = $"SEG-{flight.Id}";
+                var dynamicStatus = FlightStatusCalculator.ComputeStatus(flight.SalidaProgramada, flight.DuracionMinutos, flight.Estado, searchDate);
 
                 var segment = new FlightSegmentDto
                 {
@@ -79,7 +81,7 @@ namespace Aerocache.Business.Services
                     OperatingCarrier = flight.AerolineaOperadora,
                     Aircraft = flight.Aeronave,
                     DurationMinutes = flight.DuracionMinutos,
-                    Status = flight.Estado,
+                    Status = dynamicStatus,
                     Departure = new FlightEndpoint
                     {
                         IataCode = flight.OrigenIata,

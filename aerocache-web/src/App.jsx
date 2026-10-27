@@ -56,6 +56,10 @@ export default function App() {
   const [currentBooking, setCurrentBooking] = useState(null);
   const [currentBoardingPasses, setCurrentBoardingPasses] = useState([]);
 
+  // Post-purchase confirmation modal (manual check-in choice)
+  const [bookingConfirmationModalOpen, setBookingConfirmationModalOpen] = useState(false);
+  const [confirmedBookingData, setConfirmedBookingData] = useState(null);
+
   // Hold & Pending Fare state for step-by-step seat selection
   const [pendingFare, setPendingFare] = useState(null);
   const [isBookingFlow, setIsBookingFlow] = useState(false);
@@ -352,31 +356,9 @@ export default function App() {
       }
     }
 
-    // Auto check-in y generación de pases
-    try {
-      if (booking.isRoundTrip) {
-        let allPasses = [];
-        if (booking.outboundBooking?.bookingId) {
-          await performCheckIn(booking.outboundBooking.bookingId);
-          const bpOut = await getBoardingPasses(booking.outboundBooking.bookingId);
-          if (bpOut?.boardingPasses) allPasses.push(...bpOut.boardingPasses);
-        }
-        if (booking.returnBooking?.bookingId) {
-          await performCheckIn(booking.returnBooking.bookingId);
-          const bpRet = await getBoardingPasses(booking.returnBooking.bookingId);
-          if (bpRet?.boardingPasses) allPasses.push(...bpRet.boardingPasses);
-        }
-        setCurrentBoardingPasses(allPasses);
-      } else {
-        await performCheckIn(booking.bookingId);
-        const bp = await getBoardingPasses(booking.bookingId);
-        setCurrentBoardingPasses(bp.boardingPasses || []);
-      }
-      setBoardingPassOpen(true);
-    } catch (err) {
-      console.warn('Auto check-in aviso:', err);
-      setBoardingPassOpen(true);
-    }
+    // Modal de confirmación para que el usuario decida si hacer check-in ahora o más tarde
+    setConfirmedBookingData(booking);
+    setBookingConfirmationModalOpen(true);
   };
 
   const handleOpenExistingBoardingPass = async (booking) => {
@@ -659,6 +641,8 @@ export default function App() {
             currentUser={currentUser}
             onOpenAuthModal={() => { setIsAuthForBooking(false); setAuthModalOpen(true); }}
             setActiveTab={setActiveTab}
+            initialCheckInMode={true}
+            targetPnr={confirmedBookingData?.pnr}
           />
         )}
 
@@ -735,6 +719,150 @@ export default function App() {
         onAuthSuccess={handleAuthSuccess}
         isBookingFlow={isAuthForBooking}
       />
+
+      {/* Post-Purchase Confirmation Modal (Manual Check-in Choice) */}
+      {bookingConfirmationModalOpen && confirmedBookingData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(0, 25, 53, 0.75)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '18px',
+            maxWidth: '480px',
+            width: '100%',
+            padding: '32px',
+            textAlign: 'center',
+            boxShadow: '0 20px 40px rgba(0, 25, 53, 0.3)'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              backgroundColor: '#dcfce7',
+              color: '#15803d',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 18px auto'
+            }}>
+              <CheckCircle size={36} />
+            </div>
+
+            <span style={{
+              backgroundColor: '#dcfce7',
+              color: '#15803d',
+              padding: '3px 12px',
+              borderRadius: '12px',
+              fontSize: '12px',
+              fontWeight: 'bold'
+            }}>
+              COMPRA CONFIRMADA
+            </span>
+
+            <h2 style={{ fontSize: '22px', fontWeight: '800', color: 'var(--color-latam-navy)', margin: '12px 0 6px 0' }}>
+              ¡Tu vuelo está reservado!
+            </h2>
+
+            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>
+              Hemos confirmado tu pago y emitido tu reserva en AEROCACHE.
+            </p>
+
+            <div style={{
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '24px',
+              textAlign: 'left'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>Código PNR:</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#e8114b', fontSize: '14px' }}>
+                  {confirmedBookingData.pnr}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>Ruta:</span>
+                <span style={{ fontWeight: '700', color: 'var(--color-latam-navy)', fontSize: '13px' }}>
+                  {confirmedBookingData.originIata || 'UIO'} ➔ {confirmedBookingData.destinationIata || 'GYE'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>Estado:</span>
+                <span style={{ fontWeight: 'bold', color: '#15803d', fontSize: '12px' }}>
+                  {confirmedBookingData.status || 'CONFIRMED'} (Boleto Emitido)
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              backgroundColor: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              borderRadius: '10px',
+              padding: '14px',
+              marginBottom: '24px',
+              fontSize: '13px',
+              color: '#1e40af',
+              textAlign: 'left'
+            }}>
+              <strong>¿Deseas realizar el Check-in ahora?</strong>
+              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#3b82f6' }}>
+                Puedes confirmarlo ahora para obtener tu pase de abordar con código QR, o hacerlo más tarde desde "Mis Viajes" o "Check-in".
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={() => {
+                  setBookingConfirmationModalOpen(false);
+                  setActiveTab('checkin');
+                }}
+                style={{
+                  padding: '13px',
+                  borderRadius: '10px',
+                  backgroundColor: 'var(--color-latam-coral)',
+                  color: '#fff',
+                  fontWeight: '700',
+                  fontSize: '14px',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Sí, hacer Check-in ahora
+              </button>
+
+              <button
+                onClick={() => {
+                  setBookingConfirmationModalOpen(false);
+                  setActiveTab('bookings');
+                }}
+                style={{
+                  padding: '11px',
+                  borderRadius: '10px',
+                  backgroundColor: 'transparent',
+                  color: '#64748b',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                  border: '1px solid #cbd5e1',
+                  cursor: 'pointer'
+                }}
+              >
+                Hacerlo más tarde (Ir a Mis Viajes)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>

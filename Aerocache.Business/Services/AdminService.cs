@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Aerocache.Business.DTOs;
 using Aerocache.Business.Exceptions;
+using Aerocache.Business.Helpers;
 using Aerocache.Business.Interfaces;
 using Aerocache.DataAccess.Entities;
 using Aerocache.DataManagement.Interfaces;
@@ -107,7 +108,7 @@ namespace Aerocache.Business.Services
                     FlightNumber = f.NumeroVuelo,
                     Route = $"{f.OrigenIata} ✈ {f.DestinoIata}",
                     ScheduledDeparture = f.SalidaProgramada.ToString("dd/MM/yyyy HH:mm"),
-                    Status = f.Estado,
+                    Status = FlightStatusCalculator.ComputeStatus(f.SalidaProgramada, f.DuracionMinutos, f.Estado, DateTime.UtcNow.Date),
                     TotalSeats = totalSeats,
                     BookedSeats = bookedSeats,
                     AvailableSeats = totalSeats - bookedSeats,

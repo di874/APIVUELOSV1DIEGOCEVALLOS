@@ -14,7 +14,9 @@ export default function MyBookingsView({
   onOpenBoardingPass, 
   currentUser, 
   onOpenAuthModal, 
-  setActiveTab 
+  setActiveTab,
+  initialCheckInMode = false,
+  targetPnr = null
 }) {
   const [pnrInput, setPnrInput] = useState('');
   const [booking, setBooking] = useState(null);
@@ -89,6 +91,25 @@ export default function MyBookingsView({
   useEffect(() => {
     loadUserBookings();
   }, [currentUser]);
+
+  useEffect(() => {
+    if (targetPnr) {
+      setPnrInput(targetPnr);
+      const autoFetchTargetPnr = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const detail = await getBookingByPnr(targetPnr.trim().toUpperCase());
+          setBooking(detail);
+        } catch (err) {
+          console.error('Error cargando reserva objetivo:', err);
+        } finally {
+          setLoading(false);
+        }
+      };
+      autoFetchTargetPnr();
+    }
+  }, [targetPnr]);
 
   const handleSelectBooking = async (b) => {
     setLoading(true);
@@ -266,22 +287,26 @@ export default function MyBookingsView({
       {/* Top Header */}
       <div style={{ textAlign: 'center', marginBottom: '30px' }}>
         <span style={{ 
-          backgroundColor: 'rgba(232, 17, 75, 0.1)', 
-          color: '#e8114b', 
+          backgroundColor: initialCheckInMode ? 'rgba(22, 163, 74, 0.1)' : 'rgba(232, 17, 75, 0.1)', 
+          color: initialCheckInMode ? '#16a34a' : '#e8114b', 
           padding: '4px 14px', 
           borderRadius: '20px', 
           fontSize: '12px', 
           fontWeight: 'bold' 
         }}>
-          GESTIÓN DE VIAJES Y POSTVENTA
+          {initialCheckInMode ? 'CHECK-IN ONLINE AEROCACHE' : 'GESTIÓN DE VIAJES Y POSTVENTA'}
         </span>
         <h1 style={{ fontSize: '28px', fontWeight: '800', color: 'var(--color-latam-navy)', marginTop: '8px', marginBottom: '6px' }}>
-          {currentUser ? `Mis Vuelos — ${currentUser.nombre}` : 'Mis Viajes y Check-in'}
+          {initialCheckInMode 
+            ? 'Check-in y Pase de Abordar' 
+            : (currentUser ? `Mis Vuelos — ${currentUser.nombre}` : 'Mis Viajes y Check-in')}
         </h1>
         <p style={{ color: '#64748b', fontSize: '14px', maxWidth: '600px', margin: '0 auto' }}>
-          {currentUser 
-            ? `Consulta tus vuelos comprados con tu cuenta (${currentUser.email}), cambia asientos, agrega maletas o realiza check-in.`
-            : 'Consulta tu itinerario, agrega maletas, cambia fechas o cotiza cancelación usando tu código PNR.'}
+          {initialCheckInMode
+            ? 'Realiza tu check-in cuando desees para confirmar tu viaje y generar tu tarjeta de embarque con código QR.'
+            : (currentUser 
+              ? `Consulta tus vuelos comprados con tu cuenta (${currentUser.email}), cambia asientos, agrega maletas o realiza check-in a tu elección.`
+              : 'Consulta tu itinerario, agrega maletas, cambia fechas o cotiza cancelación usando tu código PNR.')}
         </p>
       </div>
 
@@ -503,10 +528,32 @@ export default function MyBookingsView({
                           gap: '6px'
                         }}
                       >
-                        Gestionar Vuelo <ChevronRight size={14} />
+                        Gestionar <ChevronRight size={14} />
                       </button>
+
+                      {isConfirmed && (
+                        <button
+                          onClick={() => handleSelectBooking(b)}
+                          style={{
+                            padding: '9px 16px',
+                            borderRadius: '8px',
+                            backgroundColor: '#16a34a',
+                            color: '#fff',
+                            fontSize: '13px',
+                            fontWeight: '700',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)'
+                          }}
+                        >
+                          <CheckCircle size={14} /> Hacer Check-in
+                        </button>
+                      )}
                       
-                      {onOpenBoardingPass && (
+                      {isCheckedIn && onOpenBoardingPass && (
                         <button
                           onClick={async () => {
                             try {
@@ -629,6 +676,94 @@ export default function MyBookingsView({
             </span>
           </div>
 
+          {/* Check-in Prompt Banner */}
+          {booking.status === 'CONFIRMED' && (
+            <div style={{
+              backgroundColor: '#f0fdf4',
+              border: '2px solid #86efac',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '24px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '16px'
+            }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: '800', color: '#166534', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CheckCircle size={20} color="#16a34a" /> ¿Deseas hacer tu Check-in ahora?
+                </div>
+                <p style={{ fontSize: '13px', color: '#15803d', margin: '4px 0 0 0' }}>
+                  Tu reserva está confirmada. Realiza el check-in opcionalmente para obtener tu tarjeta de embarque con código QR.
+                </p>
+              </div>
+              <button
+                onClick={handleCheckIn}
+                disabled={loading}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  backgroundColor: '#16a34a',
+                  color: '#fff',
+                  fontWeight: '800',
+                  fontSize: '14px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <CheckCircle size={16} /> Confirmar y Realizar Check-in
+              </button>
+            </div>
+          )}
+
+          {booking.status === 'CHECKED_IN' && (
+            <div style={{
+              backgroundColor: '#eff6ff',
+              border: '2px solid #93c5fd',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '24px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '16px'
+            }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: '800', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Ticket size={20} color="#2563eb" /> ¡Check-in Completado Exitosamente!
+                </div>
+                <p style={{ fontSize: '13px', color: '#1e3a8a', margin: '4px 0 0 0' }}>
+                  Tu asiento asignado es <strong>{booking.passengers?.[0]?.assignedSeats?.[0]?.seatNumber || '14A'}</strong>. Ya puedes descargar o presentar tu pase de abordar digital.
+                </p>
+              </div>
+              <button
+                onClick={() => onOpenBoardingPass(booking)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--color-latam-coral)',
+                  color: '#fff',
+                  fontWeight: '800',
+                  fontSize: '14px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(232, 17, 75, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Ticket size={16} /> Ver mi Pase de Abordar
+              </button>
+            </div>
+          )}
+
           {/* Flight Details */}
           <div style={{ marginBottom: '24px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--color-latam-navy)', marginBottom: '8px' }}>
@@ -669,16 +804,26 @@ export default function MyBookingsView({
           {/* Post-Sale Actions Bar */}
           {booking.status !== 'CANCELLED' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-              <button
-                onClick={handleCheckIn}
-                style={{ padding: '10px', borderRadius: '8px', backgroundColor: '#001935', color: '#fff', fontWeight: '700', fontSize: '13px' }}
-              >
-                ✓ Hacer Check-in
-              </button>
+              {booking.status === 'CONFIRMED' ? (
+                <button
+                  onClick={handleCheckIn}
+                  disabled={loading}
+                  style={{ padding: '10px', borderRadius: '8px', backgroundColor: '#16a34a', color: '#fff', fontWeight: '700', fontSize: '13px', border: 'none', cursor: 'pointer' }}
+                >
+                  ✓ Hacer Check-in
+                </button>
+              ) : (
+                <button
+                  disabled
+                  style={{ padding: '10px', borderRadius: '8px', backgroundColor: '#e2e8f0', color: '#64748b', fontWeight: '700', fontSize: '13px', border: 'none', cursor: 'default' }}
+                >
+                  ✓ Ya Checkeado
+                </button>
+              )}
 
               <button
                 onClick={() => onOpenBoardingPass(booking)}
-                style={{ padding: '10px', borderRadius: '8px', backgroundColor: '#0284c7', color: '#fff', fontWeight: '700', fontSize: '13px' }}
+                style={{ padding: '10px', borderRadius: '8px', backgroundColor: booking.status === 'CHECKED_IN' ? 'var(--color-latam-coral)' : '#0284c7', color: '#fff', fontWeight: '700', fontSize: '13px', border: 'none', cursor: 'pointer' }}
               >
                 Pase de Abordar
               </button>

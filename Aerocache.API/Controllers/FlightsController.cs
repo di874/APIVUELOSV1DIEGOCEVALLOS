@@ -8,6 +8,8 @@ namespace Aerocache.API.Controllers
     [ApiController]
     [Route("flights")]
     [Route("vuelos/flights")]
+    [Route("api/v2/vuelos/flights")]
+    [Route("api/v2/flights")]
     public class FlightsController : ControllerBase
     {
         private readonly IFlightStatusService _statusService;

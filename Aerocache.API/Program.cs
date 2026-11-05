@@ -140,22 +140,7 @@ using (var scope = app.Services.CreateScope())
 // Global Exception handling with RFC 7807 ProblemDetails
 app.UseMiddleware<ProblemDetailsExceptionMiddleware>();
 
-// Path rewriting middleware to seamlessly support /api/v2 and /api/v1 prefixes
-app.Use(async (context, next) =>
-{
-    var path = context.Request.Path.Value ?? "";
-    if (path.StartsWith("/api/v2", StringComparison.OrdinalIgnoreCase))
-    {
-        var newPath = path.Substring("/api/v2".Length);
-        context.Request.Path = string.IsNullOrEmpty(newPath) ? "/" : newPath;
-    }
-    else if (path.StartsWith("/api/v1", StringComparison.OrdinalIgnoreCase))
-    {
-        var newPath = path.Substring("/api/v1".Length);
-        context.Request.Path = string.IsNullOrEmpty(newPath) ? "/" : newPath;
-    }
-    await next();
-});
+app.UseRouting();
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>

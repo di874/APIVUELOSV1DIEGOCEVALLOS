@@ -78,6 +78,7 @@ namespace Aerocache.API.Controllers
         /// Salud y telemetría del nodo de vuelos (semáforo 🟢/🔴 del Panel 1)
         /// </summary>
         [HttpGet("vuelos/health")]
+        [HttpGet("api/v2/vuelos/health")]
         [HttpGet("health")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(VuelosHealthResponse), 200)]
@@ -91,6 +92,7 @@ namespace Aerocache.API.Controllers
         /// Consulta de eventos publicados (Outbox) con CloudEvents v1.0
         /// </summary>
         [HttpGet("vuelos/eventos")]
+        [HttpGet("api/v2/vuelos/eventos")]
         [HttpGet("eventos")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(VuelosEventosResponse), 200)]
@@ -104,6 +106,7 @@ namespace Aerocache.API.Controllers
         /// Consultar acuerdo B2B de promociones de vuelos
         /// </summary>
         [HttpGet("vuelos/promociones/contrato")]
+        [HttpGet("api/v2/vuelos/promociones/contrato")]
         [HttpGet("promociones/contrato")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(ContratoPromocionesResponse), 200)]
@@ -117,6 +120,7 @@ namespace Aerocache.API.Controllers
         /// Actualizar acuerdo B2B de promociones de vuelos
         /// </summary>
         [HttpPut("vuelos/promociones/contrato")]
+        [HttpPut("api/v2/vuelos/promociones/contrato")]
         [HttpPut("promociones/contrato")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(ContratoPromocionesUpdateResponse), 200)]
@@ -130,6 +134,7 @@ namespace Aerocache.API.Controllers
         /// Panel de ocupación por vuelo y cabina (operaciones)
         /// </summary>
         [HttpGet("vuelos/operaciones/vuelos")]
+        [HttpGet("api/v2/vuelos/operaciones/vuelos")]
         [HttpGet("operaciones/vuelos")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(FlightOperationsResponse), 200)]

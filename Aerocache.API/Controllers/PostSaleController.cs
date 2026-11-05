@@ -8,6 +8,8 @@ namespace Aerocache.API.Controllers
     [ApiController]
     [Route("bookings/{bookingId}")]
     [Route("vuelos/bookings/{bookingId}")]
+    [Route("api/v2/vuelos/bookings/{bookingId}")]
+    [Route("api/v2/bookings/{bookingId}")]
     public class PostSaleController : ControllerBase
     {
         private readonly IPostSaleService _postSaleService;

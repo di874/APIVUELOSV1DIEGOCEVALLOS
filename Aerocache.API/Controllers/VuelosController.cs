@@ -18,6 +18,63 @@ namespace Aerocache.API.Controllers
         }
 
         /// <summary>
+        /// Información y estado del servicio de Vuelos v2
+        /// </summary>
+        [HttpGet("vuelos")]
+        [HttpGet("api/v2/vuelos")]
+        [HttpGet("api/v1/vuelos")]
+        [Produces("application/json")]
+        public IActionResult GetVuelosApiInfo()
+        {
+            return Ok(new
+            {
+                service = "API de Vuelos — GDS Flight Core (RDA2)",
+                version = "2.0.0",
+                service_id = "NODE_VUE_EQ10",
+                nodo_id = "NODE_VUE_EQ10",
+                proveedor = "EcoAirlines (EQ10)",
+                status = "ONLINE",
+                base_url = "https://apivuelosv1diegocevallos.onrender.com",
+                api_v2_url = "https://apivuelosv1diegocevallos.onrender.com/api/v2/vuelos",
+                auth = new
+                {
+                    tipo = "OAuth2 / API Key",
+                    oauth2 = new
+                    {
+                        token_url = "https://apivuelosv1diegocevallos.onrender.com/oauth2/token",
+                        grant_type = "client_credentials",
+                        client_id = "NODE_VUE_EQ10",
+                        client_secret = "vuelos_sec_8e2723badb7ff635d6edefa295181d9af",
+                        scopes = "flights:read flights:hold flights:book flights:cancel flights:webhooks flights:ops flights:admin"
+                    },
+                    api_key = new
+                    {
+                        header = "X-API-Key",
+                        key = "bk_live_vuelos_eq10_4c2076947caa1cd76ff2cad83b719bab"
+                    }
+                },
+                endpoints = new
+                {
+                    base_vuelos = "/api/v2/vuelos",
+                    health = "/api/v2/vuelos/health",
+                    search = "/api/v2/vuelos/search",
+                    hold = "/api/v2/vuelos/offers/hold",
+                    bookings = "/api/v2/vuelos/bookings",
+                    flight_status = "/api/v2/vuelos/flights/{flightNumber}/status",
+                    seatmap = "/api/v2/vuelos/offers/{offerId}/seatmap",
+                    check_in = "/api/v2/vuelos/bookings/{bookingId}/check-in",
+                    webhooks = "/api/v2/webhooks/vuelos",
+                    oauth_token = "/oauth2/token"
+                },
+                documentacion = new
+                {
+                    swagger_ui = "https://apivuelosv1diegocevallos.onrender.com/swagger",
+                    openapi_spec = "https://apivuelosv1diegocevallos.onrender.com/swagger/v1/swagger.json"
+                }
+            });
+        }
+
+        /// <summary>
         /// Salud y telemetría del nodo de vuelos (semáforo 🟢/🔴 del Panel 1)
         /// </summary>
         [HttpGet("vuelos/health")]

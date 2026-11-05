@@ -47,6 +47,7 @@ namespace Aerocache.API.Controllers
         /// </summary>
         [HttpPost("/api/v2/webhooks/vuelos")]
         [HttpPost("/api/v1/webhooks/vuelos")]
+        [HttpPost("/webhooks/vuelos")]
         [HttpPost("incoming")]
         [Produces("application/json")]
         public IActionResult ReceiveBookingWebhook([FromBody] System.Text.Json.JsonElement payload)

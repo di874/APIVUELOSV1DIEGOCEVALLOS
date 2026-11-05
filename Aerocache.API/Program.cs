@@ -140,6 +140,23 @@ using (var scope = app.Services.CreateScope())
 // Global Exception handling with RFC 7807 ProblemDetails
 app.UseMiddleware<ProblemDetailsExceptionMiddleware>();
 
+// Path rewriting middleware to seamlessly support /api/v2 and /api/v1 prefixes
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value ?? "";
+    if (path.StartsWith("/api/v2", StringComparison.OrdinalIgnoreCase))
+    {
+        var newPath = path.Substring("/api/v2".Length);
+        context.Request.Path = string.IsNullOrEmpty(newPath) ? "/" : newPath;
+    }
+    else if (path.StartsWith("/api/v1", StringComparison.OrdinalIgnoreCase))
+    {
+        var newPath = path.Substring("/api/v1".Length);
+        context.Request.Path = string.IsNullOrEmpty(newPath) ? "/" : newPath;
+    }
+    await next();
+});
+
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -158,6 +175,34 @@ app.UseStaticFiles();
 ((IApplicationBuilder)app).UseSoapEndpoint<IPostSaleSoapService>("/soap/postsale.asmx", new SoapEncoderOptions(), SoapSerializer.DataContractSerializer);
 
 app.MapControllers();
-app.MapFallbackToFile("index.html");
+
+// Fallback to index.html for Single Page Application, while preserving JSON 404 for API routes
+app.MapFallback(async context =>
+{
+    var p = context.Request.Path.Value ?? "";
+    if (p.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
+        p.StartsWith("/vuelos", StringComparison.OrdinalIgnoreCase) ||
+        p.StartsWith("/oauth", StringComparison.OrdinalIgnoreCase) ||
+        p.StartsWith("/auth", StringComparison.OrdinalIgnoreCase) ||
+        p.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = 404;
+        context.Response.ContentType = "application/problem+json";
+        await context.Response.WriteAsync("{\"type\":\"https://httpstatuses.com/404\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"El recurso solicitado no fue encontrado en la API de Vuelos.\"}");
+        return;
+    }
+
+    var indexPath = Path.Combine(app.Environment.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "index.html");
+    if (File.Exists(indexPath))
+    {
+        context.Response.ContentType = "text/html; charset=utf-8";
+        await context.Response.SendFileAsync(indexPath);
+    }
+    else
+    {
+        context.Response.StatusCode = 404;
+        await context.Response.WriteAsync("Index file not found.");
+    }
+});
 
 app.Run();

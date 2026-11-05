@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import FlightSearchWidget from './components/FlightSearchWidget';
@@ -18,6 +18,18 @@ export default function App() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState(null);
   const [searchError, setSearchError] = useState(null);
+
+  // Auto-activación / Keep-Alive de Supabase al abrir la página web
+  useEffect(() => {
+    const pingSupabase = async () => {
+      try {
+        await fetch('/vuelos/health');
+      } catch (err) {
+        console.warn('Ping de activación en segundo plano:', err);
+      }
+    };
+    pingSupabase();
+  }, []);
 
   // Round trip search state
   const [lastSearchParams, setLastSearchParams] = useState(null);

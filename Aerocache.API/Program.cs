@@ -127,7 +127,14 @@ using (var scope = app.Services.CreateScope())
         ");
     }
 
-    AerocacheDataSeeder.SeedData(context);
+    try
+    {
+        AerocacheDataSeeder.SeedData(context);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[AVISO] No se pudo ejecutar el semillado inicial (posiblemente la BD está pausada o reconectando): {ex.Message}");
+    }
 }
 
 // Global Exception handling with RFC 7807 ProblemDetails

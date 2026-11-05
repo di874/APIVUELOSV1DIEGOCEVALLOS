@@ -471,10 +471,10 @@ namespace Aerocache.Business.DTOs
         public string Status { get; set; } = "HEALTHY"; // HEALTHY, DEGRADED, DOWN
 
         [JsonPropertyName("nodo_id")]
-        public string NodoId { get; set; } = "NODE_VUE_ECOAIRLINES";
+        public string NodoId { get; set; } = "NODE_VUE_EQ10";
 
         [JsonPropertyName("nombre_proveedor")]
-        public string NombreProveedor { get; set; } = "EcoAirlines";
+        public string NombreProveedor { get; set; } = "EcoAirlines (EQ10)";
 
         [JsonPropertyName("vertical")]
         public string Vertical { get; set; } = "VUELOS";

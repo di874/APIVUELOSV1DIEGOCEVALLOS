@@ -1,0 +1,17 @@
+﻿name: Supabase & Render Keep-Alive
+
+on:
+  schedule:
+    # Se ejecuta automáticamente cada 2 días a las 12:00 UTC
+    - cron: '0 12 */2 * *'
+  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub si se desea
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping a Vuelos Health (despierta Render y consulta Supabase)
+        run: |
+          echo "Ejecutando pulso Keep-Alive hacia el microservicio de Vuelos..."
+          curl -s --fail --max-time 60 "https://apivuelosv1diegocevallos.onrender.com/vuelos/health" || true
+          echo "Keep-Alive completado exitosamente."

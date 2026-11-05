@@ -59,8 +59,8 @@ namespace Aerocache.Business.Services
             return new VuelosHealthResponse
             {
                 Status = dbUp ? "HEALTHY" : "DEGRADED",
-                NodoId = "NODE_VUE_ECOAIRLINES",
-                NombreProveedor = "EcoAirlines",
+                NodoId = "NODE_VUE_EQ10",
+                NombreProveedor = "EcoAirlines (EQ10)",
                 Vertical = "VUELOS",
                 Version = "2.0.0",
                 UptimeSeconds = uptimeSeconds,

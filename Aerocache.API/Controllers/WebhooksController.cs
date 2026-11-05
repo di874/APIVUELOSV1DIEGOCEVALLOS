@@ -43,6 +43,23 @@ namespace Aerocache.API.Controllers
         }
 
         /// <summary>
+        /// Receptor de webhooks de Booking en Azure (v2 y v1)
+        /// </summary>
+        [HttpPost("/api/v2/webhooks/vuelos")]
+        [HttpPost("/api/v1/webhooks/vuelos")]
+        [HttpPost("incoming")]
+        [Produces("application/json")]
+        public IActionResult ReceiveBookingWebhook([FromBody] System.Text.Json.JsonElement payload)
+        {
+            return Ok(new
+            {
+                success = true,
+                message = "Evento de webhook recibido correctamente por el nodo de Vuelos",
+                received_at = System.DateTime.UtcNow
+            });
+        }
+
+        /// <summary>
         /// Eliminar suscripción de webhook
         /// </summary>
         [HttpDelete("{id}")]

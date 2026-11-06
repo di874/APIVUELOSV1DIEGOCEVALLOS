@@ -32,9 +32,10 @@ namespace Aerocache.API.Controllers
             [FromQuery] string? createdTo,
             [FromQuery] int limit = 10,
             [FromQuery] string? cursor = null,
-            [FromQuery] string? email = null)
+            [FromQuery] string? email = null,
+            [FromHeader(Name = "X-User-Id")] string? userId = null)
         {
-            var result = await _bookingService.ListBookingsAsync(pnr, status, createdFrom, createdTo, limit, cursor, email);
+            var result = await _bookingService.ListBookingsAsync(pnr, status, createdFrom, createdTo, limit, cursor, email, userId);
             return Ok(result);
         }
 
@@ -47,9 +48,12 @@ namespace Aerocache.API.Controllers
         [ProducesResponseType(typeof(ProblemDetailsDto), 400)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 409)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 410)]
-        public async Task<IActionResult> CreateBooking([FromBody] BookingRequest request, [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+        public async Task<IActionResult> CreateBooking(
+            [FromBody] BookingRequest request,
+            [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+            [FromHeader(Name = "X-User-Id")] string? userId = null)
         {
-            var result = await _bookingService.CreateBookingAsync(request, idempotencyKey);
+            var result = await _bookingService.CreateBookingAsync(request, idempotencyKey, userId);
             return StatusCode(201, result);
         }
 
@@ -60,9 +64,11 @@ namespace Aerocache.API.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(BookingDetail), 200)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 404)]
-        public async Task<IActionResult> GetBookingDetail([FromRoute] string bookingId)
+        public async Task<IActionResult> GetBookingDetail(
+            [FromRoute] string bookingId,
+            [FromHeader(Name = "X-User-Id")] string? userId = null)
         {
-            var result = await _bookingService.GetBookingDetailAsync(bookingId);
+            var result = await _bookingService.GetBookingDetailAsync(bookingId, userId);
             return Ok(result);
         }
 

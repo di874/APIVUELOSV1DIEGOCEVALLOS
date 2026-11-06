@@ -23,19 +23,31 @@ namespace Aerocache.Business.Services
 
         public async Task<FlightStatusDto> GetFlightStatusAsync(string flightNumber, string date)
         {
+            DateTime queryDate;
+            if (!DateTime.TryParse(date, out queryDate))
+                queryDate = DateTime.UtcNow.Date;
+
+            var minDate = queryDate.Date;
+            var maxDate = queryDate.Date.AddDays(1);
+
             var flight = await _uow.Vuelos.Query()
-                .FirstOrDefaultAsync(f => f.NumeroVuelo == flightNumber);
+                .FirstOrDefaultAsync(f => f.NumeroVuelo == flightNumber && f.SalidaProgramada >= minDate && f.SalidaProgramada < maxDate);
+
+            if (flight == null)
+            {
+                flight = await _uow.Vuelos.Query()
+                    .FirstOrDefaultAsync(f => f.NumeroVuelo == flightNumber);
+            }
 
             if (flight == null)
             {
                 throw new AerocacheProblemException(404, "FLIGHT_STATUS_NOT_AVAILABLE", $"Estado de vuelo no disponible para {flightNumber}");
             }
 
-            DateTime queryDate;
-            if (!DateTime.TryParse(date, out queryDate))
-                queryDate = DateTime.UtcNow.Date;
+            var scheduledDeparture = DateTime.SpecifyKind(queryDate.Date.Add(flight.SalidaProgramada.TimeOfDay), DateTimeKind.Utc);
+            var scheduledArrival = scheduledDeparture.AddMinutes(flight.DuracionMinutos);
 
-            var dynamicStatus = FlightStatusCalculator.ComputeStatus(flight.SalidaProgramada, flight.DuracionMinutos, flight.Estado, queryDate);
+            var dynamicStatus = FlightStatusCalculator.ComputeStatus(scheduledDeparture, flight.DuracionMinutos, flight.Estado, queryDate);
 
             return new FlightStatusDto
             {
@@ -49,17 +61,17 @@ namespace Aerocache.Business.Services
                 {
                     IataCode = flight.OrigenIata,
                     Terminal = flight.TerminalSalida,
-                    ScheduledAt = flight.SalidaProgramada.ToString("o"),
-                    EstimatedAt = flight.SalidaEstimada?.ToString("o"),
-                    ActualAt = flight.SalidaReal?.ToString("o")
+                    ScheduledAt = scheduledDeparture.ToString("o"),
+                    EstimatedAt = scheduledDeparture.ToString("o"),
+                    ActualAt = dynamicStatus == "ARRIVED" ? scheduledDeparture.ToString("o") : null
                 },
                 Arrival = new FlightStatusEndpoint
                 {
                     IataCode = flight.DestinoIata,
                     Terminal = flight.TerminalLlegada,
-                    ScheduledAt = flight.LlegadaProgramada.ToString("o"),
-                    EstimatedAt = flight.LlegadaEstimada?.ToString("o"),
-                    ActualAt = flight.LlegadaReal?.ToString("o")
+                    ScheduledAt = scheduledArrival.ToString("o"),
+                    EstimatedAt = scheduledArrival.ToString("o"),
+                    ActualAt = dynamicStatus == "ARRIVED" ? scheduledArrival.ToString("o") : null
                 }
             };
         }

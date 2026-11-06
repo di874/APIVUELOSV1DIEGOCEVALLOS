@@ -23,7 +23,7 @@ namespace Aerocache.Business.Services
             _eventBus = eventBus;
         }
 
-        public async Task<BookingDetail> CreateBookingAsync(BookingRequest request, string? idempotencyKey)
+        public async Task<BookingDetail> CreateBookingAsync(BookingRequest request, string? idempotencyKey, string? userId = null)
         {
             if (!Guid.TryParse(request.HoldId, out var holdId))
             {
@@ -36,9 +36,15 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(404, "OFFER_NO_LONGER_AVAILABLE", "Hold no encontrado");
             }
 
-            if (hold.Estado == "EXPIRED" || hold.FechaExpiracion < DateTime.UtcNow)
+            var expiryUtc = hold.FechaExpiracion.Kind == DateTimeKind.Utc 
+                ? hold.FechaExpiracion 
+                : (hold.FechaExpiracion.Kind == DateTimeKind.Local 
+                    ? hold.FechaExpiracion.ToUniversalTime() 
+                    : DateTime.SpecifyKind(hold.FechaExpiracion, DateTimeKind.Utc));
+
+            if (hold.Estado == "EXPIRED" || expiryUtc < DateTime.UtcNow)
             {
-                throw new AerocacheProblemException(410, "QUOTE_EXPIRED", "El tiempo de bloqueo de tarifa (Hold) ha expirado.");
+                throw new AerocacheProblemException(410, "HOLD_EXPIRED", "El tiempo de bloqueo de tarifa (Hold) ha expirado.");
             }
 
             if (hold.Estado == "CONSUMED")
@@ -51,10 +57,35 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(400, "PAYMENT_REFERENCE_INVALID", "Referencia de pago inválida o no provista");
             }
 
-            var flight = await _uow.Vuelos.GetByIdAsync(hold.VueloId);
+            // Validar que payment.amount coincida con el total del hold
+            if (request.Payment?.Amount != null && !string.IsNullOrWhiteSpace(request.Payment.Amount.Total))
+            {
+                if (decimal.TryParse(request.Payment.Amount.Total, NumberStyles.Any, CultureInfo.InvariantCulture, out var paidAmount))
+                {
+                    if (Math.Abs(paidAmount - hold.TotalBloqueado) > 0.05m)
+                    {
+                        throw new AerocacheProblemException(422, "AMOUNT_MISMATCH", "Monto no coincide",
+                            $"El monto de pago provisto ({paidAmount.ToString("F2", CultureInfo.InvariantCulture)}) no coincide con el total congelado del hold ({hold.TotalBloqueado.ToString("F2", CultureInfo.InvariantCulture)}).");
+                    }
+                }
+            }
+
+            var primaryFlightId = hold.VueloId.Contains('_') ? hold.VueloId.Split('_')[0] : hold.VueloId;
+            var flight = await _uow.Vuelos.GetByIdAsync(primaryFlightId);
             if (flight == null)
             {
                 throw new AerocacheProblemException(404, "OFFER_NO_LONGER_AVAILABLE", "Vuelo asociado no encontrado");
+            }
+
+            // Validar que las nacionalidades de los pasajeros sean códigos ISO de 2 letras
+            foreach (var p in request.Passengers)
+            {
+                var nat = p.Nationality?.Trim().ToUpperInvariant();
+                if (string.IsNullOrWhiteSpace(nat) || nat.Length != 2 || !nat.All(char.IsLetter))
+                {
+                    throw new AerocacheProblemException(400, "INVALID_NATIONALITY", "Nacionalidad inválida",
+                        $"La nacionalidad '{p.Nationality}' para el pasajero {p.FirstName} {p.LastName} debe ser un código ISO de 2 letras (ej. EC).");
+                }
             }
 
             // Generate realistic 6-character PNR (Latin American airline standard)
@@ -70,14 +101,18 @@ namespace Aerocache.Business.Services
                 MontoTotalGeneral = hold.TotalBloqueado,
                 Moneda = hold.Moneda,
                 FechaCreacion = DateTime.UtcNow,
-                ReferenciaPago = request.Payment.PaymentReferenceValue,
+                ReferenciaPago = request.Payment?.PaymentReferenceValue ?? string.Empty,
                 VueloId = flight.Id,
                 ItinerarioId = hold.ItinerarioId,
                 ClaseCabina = hold.ClaseCabina,
                 MarcaTarifa = hold.MarcaTarifa,
                 OrigenIata = flight.OrigenIata,
                 DestinoIata = flight.DestinoIata,
-                FechaSalida = flight.SalidaProgramada
+                FechaSalida = flight.SalidaProgramada,
+                UsuarioId = !string.IsNullOrWhiteSpace(userId) ? userId : (!string.IsNullOrWhiteSpace(request.SalesChannel?.PartnerOrderId) ? request.SalesChannel.PartnerOrderId : "usr-guest"),
+                PartnerOrderId = request.SalesChannel?.PartnerOrderId,
+                PartnerId = request.SalesChannel?.PartnerId ?? "BOOKING_PROTOTIPO",
+                PackageId = request.SalesChannel?.PackageId
             };
 
             var occupiedSeats = await _uow.Reservas.Query()
@@ -163,21 +198,25 @@ namespace Aerocache.Business.Services
             {
                 await _eventBus.PublishAsync("booking.confirmed", new
                 {
-                    bookingId = booking.ReservaId,
+                    bookingId = booking.ReservaId.ToString(),
                     pnr = booking.Pnr,
                     status = booking.Estado,
-                    vueloId = booking.VueloId,
-                    total = booking.MontoTotalGeneral,
-                    currency = booking.Moneda,
-                    passengersCount = booking.Pasajeros.Count,
-                    createdAt = booking.FechaCreacion
+                    ownerId = booking.UsuarioId,
+                    partnerOrderId = booking.PartnerOrderId,
+                    packageId = booking.PackageId,
+                    grandTotal = new MoneyAmount
+                    {
+                        Currency = booking.Moneda,
+                        Total = booking.MontoTotalGeneral.ToString("F2", CultureInfo.InvariantCulture)
+                    },
+                    createdAt = booking.FechaCreacion.ToString("o")
                 });
             }
 
-            return await GetBookingDetailAsync(booking.ReservaId.ToString());
+            return await GetBookingDetailAsync(booking.ReservaId.ToString(), booking.UsuarioId);
         }
 
-        public async Task<BookingDetail> GetBookingDetailAsync(string bookingId)
+        public async Task<BookingDetail> GetBookingDetailAsync(string bookingId, string? userId = null)
         {
             if (!Guid.TryParse(bookingId, out var id))
             {
@@ -191,7 +230,17 @@ namespace Aerocache.Business.Services
 
             if (booking == null)
             {
-                throw new AerocacheProblemException(404, "BOOKING_NOT_CONFIRMED", "Reserva no encontrada");
+                throw new AerocacheProblemException(404, "BOOKING_NOT_FOUND", "Reserva no encontrada");
+            }
+
+            // Validación de seguridad por X-User-Id (Aislamiento de reservas)
+            if (!string.IsNullOrWhiteSpace(userId) && !string.IsNullOrWhiteSpace(booking.UsuarioId))
+            {
+                if (!string.Equals(booking.UsuarioId, userId, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new AerocacheProblemException(404, "BOOKING_NOT_FOUND", "Reserva no encontrada",
+                        "No se encontró la reserva para el usuario especificado.");
+                }
             }
 
             var flight = await _uow.Vuelos.GetByIdAsync(booking.VueloId ?? "");
@@ -243,6 +292,13 @@ namespace Aerocache.Business.Services
                         Segments = new List<FlightSegmentDto> { segment }
                     }
                 },
+                SalesChannel = new SalesChannelDto
+                {
+                    PartnerId = booking.PartnerId ?? "BOOKING_PROTOTIPO",
+                    PartnerOrderId = booking.PartnerOrderId,
+                    PackageId = booking.PackageId,
+                    PromotionApplied = false
+                },
                 Passengers = booking.Pasajeros.Select(p => new PassengerItem
                 {
                     PassengerId = p.Id,
@@ -279,7 +335,7 @@ namespace Aerocache.Business.Services
             };
         }
 
-        public async Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor, string? email = null)
+        public async Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor, string? email = null, string? userId = null)
         {
             var query = _uow.Reservas.Query().Include(b => b.Pasajeros).AsQueryable();
 
@@ -288,6 +344,9 @@ namespace Aerocache.Business.Services
 
             if (!string.IsNullOrWhiteSpace(status))
                 query = query.Where(b => b.Estado == status);
+
+            if (!string.IsNullOrWhiteSpace(userId))
+                query = query.Where(b => b.UsuarioId == userId);
 
             if (!string.IsNullOrWhiteSpace(email))
             {
@@ -421,12 +480,23 @@ namespace Aerocache.Business.Services
 
             if (_eventBus != null)
             {
-                await _eventBus.PublishAsync("ec.edu.epn.booking.vuelos.ticket.issued", new
+                await _eventBus.PublishAsync("booking.ticket_issued", new
                 {
                     bookingId = booking.ReservaId.ToString(),
                     pnr = booking.Pnr,
+                    status = booking.Estado,
+                    ownerId = booking.UsuarioId,
+                    partnerOrderId = booking.PartnerOrderId,
+                    packageId = booking.PackageId,
+                    paymentReference = booking.ReferenciaPago,
                     issuedTickets = issuedCount,
-                    timestamp = DateTime.UtcNow
+                    tickets = booking.Boletos.Select(t => new
+                    {
+                        ticketId = t.BoletoId,
+                        eTicketNumber = t.NumeroBoletoElectronico,
+                        passengerId = t.PasajeroId
+                    }).ToList(),
+                    timestamp = DateTime.UtcNow.ToString("o")
                 });
             }
 

@@ -20,9 +20,9 @@ namespace Aerocache.Business.Interfaces
 
     public interface IBookingService
     {
-        Task<BookingDetail> CreateBookingAsync(BookingRequest request, string? idempotencyKey);
-        Task<BookingDetail> GetBookingDetailAsync(string bookingId);
-        Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor, string? email = null);
+        Task<BookingDetail> CreateBookingAsync(BookingRequest request, string? idempotencyKey, string? userId = null);
+        Task<BookingDetail> GetBookingDetailAsync(string bookingId, string? userId = null);
+        Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor, string? email = null, string? userId = null);
         Task<TicketListResponse> GetBookingTicketsAsync(string bookingId);
         Task<TicketDto> GetTicketAsync(string bookingId, string ticketId);
         Task<TicketIssuanceResponse> IssueTicketsAsync(string bookingId, string? idempotencyKey);
@@ -36,7 +36,7 @@ namespace Aerocache.Business.Interfaces
         Task<List<DateChangeSearchOption>> SearchDateChangeAsync(string bookingId, DateChangeSearchRequest request);
         Task<BookingDetail> ConfirmDateChangeAsync(string bookingId, DateChangeRequest request, string? idempotencyKey);
         Task<CancellationQuoteResponse> GetCancellationQuoteAsync(string bookingId);
-        Task CancelBookingAsync(string bookingId, CancelBookingRequest request, string? idempotencyKey);
+        Task<CancelBookingResponse> CancelBookingAsync(string bookingId, CancelBookingRequest request, string? idempotencyKey);
         Task<ChangeSeatResponse> ChangeSeatAsync(string bookingId, ChangeSeatRequest request);
     }
 

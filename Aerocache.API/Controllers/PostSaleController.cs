@@ -93,7 +93,8 @@ namespace Aerocache.API.Controllers
         /// Cancelar reserva
         /// </summary>
         [HttpPost("cancel")]
-        [ProducesResponseType(200)]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(CancelBookingResponse), 200)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 409)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 410)]
         public async Task<IActionResult> CancelBooking(
@@ -101,8 +102,8 @@ namespace Aerocache.API.Controllers
             [FromBody] CancelBookingRequest request,
             [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
         {
-            await _postSaleService.CancelBookingAsync(bookingId, request, idempotencyKey);
-            return Ok(new { message = "Cancelación procesada exitosamente" });
+            var result = await _postSaleService.CancelBookingAsync(bookingId, request, idempotencyKey);
+            return Ok(result);
         }
 
         /// <summary>

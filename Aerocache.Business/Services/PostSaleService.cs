@@ -232,12 +232,13 @@ namespace Aerocache.Business.Services
             };
         }
 
-        public async Task CancelBookingAsync(string bookingId, CancelBookingRequest request, string? idempotencyKey)
+        public async Task<CancelBookingResponse> CancelBookingAsync(string bookingId, CancelBookingRequest request, string? idempotencyKey)
         {
             if (!Guid.TryParse(bookingId, out var id))
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "BookingId inválido");
 
             var booking = await _uow.Reservas.Query()
+                .Include(b => b.Pasajeros)
                 .Include(b => b.Boletos)
                 .FirstOrDefaultAsync(b => b.ReservaId == id);
 
@@ -247,14 +248,21 @@ namespace Aerocache.Business.Services
             if (booking.Estado == "CANCELLED")
                 throw new AerocacheProblemException(409, "ALREADY_CANCELLED", "La reserva ya ha sido cancelada");
 
-            var quote = await _uow.CotizacionesCancelacion.FirstOrDefaultAsync(q => q.CotizacionId == request.QuoteId);
-            if (quote == null || quote.FechaExpiracion < DateTime.UtcNow)
+            var quote = !string.IsNullOrEmpty(request.QuoteId)
+                ? await _uow.CotizacionesCancelacion.FirstOrDefaultAsync(q => q.CotizacionId == request.QuoteId)
+                : null;
+
+            if (quote != null && quote.FechaExpiracion < DateTime.UtcNow)
             {
                 throw new AerocacheProblemException(410, "QUOTE_EXPIRED", "La cotización de cancelación ha expirado");
             }
 
+            var reasonCode = !string.IsNullOrWhiteSpace(request.ReasonCode)
+                ? request.ReasonCode
+                : (request.Reason ?? "CUSTOMER_REQUEST");
+
             booking.Estado = "CANCELLED";
-            booking.MotivoCancelacion = request.Reason ?? "Cancelado por solicitud del pasajero";
+            booking.MotivoCancelacion = request.Comment ?? request.Reason ?? reasonCode;
             booking.FechaActualizacion = DateTime.UtcNow;
 
             foreach (var t in booking.Boletos)
@@ -264,16 +272,56 @@ namespace Aerocache.Business.Services
 
             await _uow.CompleteAsync();
 
+            var refundId = $"REF-VUE-{Guid.NewGuid():N}"[..12].ToUpperInvariant();
+            decimal refundVal = quote?.MontoReembolso ?? booking.MontoTotalGeneral;
+            decimal penaltyVal = quote?.MontoPenalidad ?? 0.00m;
+            decimal percentage = booking.MontoTotalGeneral > 0
+                ? Math.Round((refundVal / booking.MontoTotalGeneral) * 100m, 1)
+                : 100.0m;
+
+            var response = new CancelBookingResponse
+            {
+                BookingId = booking.ReservaId.ToString(),
+                Pnr = booking.Pnr,
+                Status = "CANCELLED",
+                CancelledAt = DateTime.UtcNow.ToString("o"),
+                ReasonCode = reasonCode,
+                Refund = new RefundDetailDto
+                {
+                    RefundId = refundId,
+                    Amount = refundVal.ToString("F2", CultureInfo.InvariantCulture),
+                    PenaltyAmount = penaltyVal.ToString("F2", CultureInfo.InvariantCulture),
+                    Currency = booking.Moneda ?? "USD",
+                    Percentage = percentage,
+                    OriginalPaymentReference = booking.ReferenciaPago,
+                    Status = "CALCULATED"
+                },
+                TicketsVoided = booking.Boletos.Select(b => b.BoletoId.ToString()).ToList()
+            };
+
             if (_eventBus != null)
             {
                 await _eventBus.PublishAsync("booking.cancelled", new
                 {
-                    bookingId = booking.ReservaId,
+                    bookingId = booking.ReservaId.ToString(),
                     pnr = booking.Pnr,
-                    refund = quote.MontoReembolso,
-                    reason = booking.MotivoCancelacion
+                    status = "CANCELLED",
+                    ownerId = booking.UsuarioId,
+                    partnerOrderId = booking.PartnerOrderId,
+                    packageId = booking.PackageId,
+                    grandTotal = new MoneyAmount
+                    {
+                        Currency = booking.Moneda ?? "USD",
+                        Total = booking.MontoTotalGeneral.ToString("F2", CultureInfo.InvariantCulture)
+                    },
+                    reasonCode = reasonCode,
+                    refundId = refundId,
+                    refundAmount = refundVal.ToString("F2", CultureInfo.InvariantCulture),
+                    seatsReleased = booking.Pasajeros.Count
                 });
             }
+
+            return response;
         }
 
         public async Task<ChangeSeatResponse> ChangeSeatAsync(string bookingId, ChangeSeatRequest request)

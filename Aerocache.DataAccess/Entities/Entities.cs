@@ -268,6 +268,18 @@ namespace Aerocache.DataAccess.Entities
         [Column("MotivoCancelacion")]
         public string? MotivoCancelacion { get; set; }
 
+        [Column("UsuarioId")]
+        public string? UsuarioId { get; set; }
+
+        [Column("PartnerOrderId")]
+        public string? PartnerOrderId { get; set; }
+
+        [Column("PartnerId")]
+        public string? PartnerId { get; set; }
+
+        [Column("PackageId")]
+        public string? PackageId { get; set; }
+
         public List<Pasajero> Pasajeros { get; set; } = new();
         public List<Boleto> Boletos { get; set; } = new();
         public List<PaseAbordar> PasesAbordar { get; set; } = new();

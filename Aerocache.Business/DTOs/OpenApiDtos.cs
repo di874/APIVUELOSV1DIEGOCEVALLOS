@@ -1,16 +1,73 @@
 using Aerocache.Business.Exceptions;
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Aerocache.Business.DTOs
 {
+    [JsonConverter(typeof(MoneyAmountJsonConverter))]
     public class MoneyAmount
     {
         public string Currency { get; set; } = "USD";
         public string? BaseFare { get; set; }
         public string? Taxes { get; set; }
         public string Total { get; set; } = "0.00";
+    }
+
+    public class MoneyAmountJsonConverter : JsonConverter<MoneyAmount>
+    {
+        public override MoneyAmount? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.Null) return null;
+
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                return new MoneyAmount { Total = reader.GetString() ?? "0.00", Currency = "USD" };
+            }
+
+            if (reader.TokenType == JsonTokenType.Number)
+            {
+                if (reader.TryGetDecimal(out var decVal))
+                    return new MoneyAmount { Total = decVal.ToString("F2", System.Globalization.CultureInfo.InvariantCulture), Currency = "USD" };
+                return new MoneyAmount { Total = reader.GetDouble().ToString("F2", System.Globalization.CultureInfo.InvariantCulture), Currency = "USD" };
+            }
+
+            if (reader.TokenType == JsonTokenType.StartObject)
+            {
+                var money = new MoneyAmount();
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.EndObject) return money;
+                    if (reader.TokenType == JsonTokenType.PropertyName)
+                    {
+                        var prop = reader.GetString();
+                        reader.Read();
+                        if (string.Equals(prop, "currency", StringComparison.OrdinalIgnoreCase))
+                            money.Currency = reader.GetString() ?? "USD";
+                        else if (string.Equals(prop, "baseFare", StringComparison.OrdinalIgnoreCase))
+                            money.BaseFare = reader.TokenType == JsonTokenType.Number ? reader.GetDecimal().ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : reader.GetString();
+                        else if (string.Equals(prop, "taxes", StringComparison.OrdinalIgnoreCase))
+                            money.Taxes = reader.TokenType == JsonTokenType.Number ? reader.GetDecimal().ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : reader.GetString();
+                        else if (string.Equals(prop, "total", StringComparison.OrdinalIgnoreCase))
+                            money.Total = reader.TokenType == JsonTokenType.Number ? reader.GetDecimal().ToString("F2", System.Globalization.CultureInfo.InvariantCulture) : (reader.GetString() ?? "0.00");
+                    }
+                }
+                return money;
+            }
+
+            return new MoneyAmount();
+        }
+
+        public override void Write(Utf8JsonWriter writer, MoneyAmount value, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("currency", value.Currency ?? "USD");
+            if (value.BaseFare != null) writer.WriteString("baseFare", value.BaseFare);
+            if (value.Taxes != null) writer.WriteString("taxes", value.Taxes);
+            writer.WriteString("total", value.Total ?? "0.00");
+            writer.WriteEndObject();
+        }
     }
 
     public class FlightEndpoint
@@ -151,6 +208,7 @@ namespace Aerocache.Business.DTOs
         public string OfferId { get; set; } = string.Empty;
         public List<ItinerarySelectionDto> ItinerarySelections { get; set; } = new();
         public PassengerBreakdown PassengersBreakdown { get; set; } = new();
+        public int TtlMinutes { get; set; } = 15;
     }
 
     public class HoldResponse
@@ -208,7 +266,29 @@ namespace Aerocache.Business.DTOs
 
     public class PaymentReference
     {
+        [JsonPropertyName("paymentReference")]
         public string PaymentReferenceValue { get; set; } = string.Empty;
+
+        [JsonPropertyName("amount")]
+        public MoneyAmount? Amount { get; set; }
+
+        [JsonPropertyName("provider")]
+        public string? Provider { get; set; } = "BOOKING_PROTOTIPO";
+    }
+
+    public class SalesChannelDto
+    {
+        [JsonPropertyName("partnerId")]
+        public string? PartnerId { get; set; }
+
+        [JsonPropertyName("partnerOrderId")]
+        public string? PartnerOrderId { get; set; }
+
+        [JsonPropertyName("packageId")]
+        public string? PackageId { get; set; }
+
+        [JsonPropertyName("promotionApplied")]
+        public bool PromotionApplied { get; set; }
     }
 
     public class BookingRequest
@@ -216,6 +296,7 @@ namespace Aerocache.Business.DTOs
         public string HoldId { get; set; } = string.Empty;
         public List<PassengerItem> Passengers { get; set; } = new();
         public PaymentReference Payment { get; set; } = new();
+        public SalesChannelDto? SalesChannel { get; set; }
     }
 
     public class TicketSegmentDto
@@ -261,6 +342,7 @@ namespace Aerocache.Business.DTOs
         public List<PassengerItem> Passengers { get; set; } = new();
         public List<TicketDto> Tickets { get; set; } = new();
         public List<ChangeHistoryItem>? Changes { get; set; }
+        public SalesChannelDto? SalesChannel { get; set; }
     }
 
     public class BookingSummaryItem
@@ -356,6 +438,33 @@ namespace Aerocache.Business.DTOs
     {
         public string QuoteId { get; set; } = string.Empty;
         public string? Reason { get; set; }
+
+        [JsonPropertyName("reasonCode")]
+        public string? ReasonCode { get; set; }
+
+        public string? Comment { get; set; }
+    }
+
+    public class RefundDetailDto
+    {
+        public string RefundId { get; set; } = string.Empty;
+        public string Amount { get; set; } = "0.00";
+        public string PenaltyAmount { get; set; } = "0.00";
+        public string Currency { get; set; } = "USD";
+        public decimal Percentage { get; set; } = 100.0m;
+        public string? OriginalPaymentReference { get; set; }
+        public string Status { get; set; } = "CALCULATED";
+    }
+
+    public class CancelBookingResponse
+    {
+        public string BookingId { get; set; } = string.Empty;
+        public string Pnr { get; set; } = string.Empty;
+        public string Status { get; set; } = "CANCELLED";
+        public string CancelledAt { get; set; } = string.Empty;
+        public string ReasonCode { get; set; } = "CUSTOMER_REQUEST";
+        public RefundDetailDto Refund { get; set; } = new();
+        public List<string> TicketsVoided { get; set; } = new();
     }
 
     public class CheckedInSegmentDto

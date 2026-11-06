@@ -22,6 +22,294 @@ namespace Aerocache.Business.Services
             _uow = uow;
         }
 
+        private record FlightTemplate(string FlightNumber, TimeSpan DepartureTime, int DurationMinutes);
+
+        private List<FlightTemplate> GetRouteTemplates(string origin, string dest)
+        {
+            if (origin == "UIO" && dest == "GYE")
+            {
+                return new()
+                {
+                    new("AC1401", new TimeSpan(6, 30, 0), 50),
+                    new("AC1403", new TimeSpan(10, 0, 0), 50),
+                    new("AC1405", new TimeSpan(15, 15, 0), 50),
+                    new("AC1407", new TimeSpan(19, 45, 0), 50)
+                };
+            }
+            if (origin == "GYE" && dest == "UIO")
+            {
+                return new()
+                {
+                    new("AC1402", new TimeSpan(7, 45, 0), 50),
+                    new("AC1404", new TimeSpan(11, 30, 0), 50),
+                    new("AC1406", new TimeSpan(16, 45, 0), 50),
+                    new("AC1408", new TimeSpan(21, 15, 0), 50)
+                };
+            }
+            if (origin == "UIO" && dest == "CUE")
+            {
+                return new()
+                {
+                    new("AC1501", new TimeSpan(7, 0, 0), 55),
+                    new("AC1503", new TimeSpan(14, 20, 0), 55),
+                    new("AC1505", new TimeSpan(18, 30, 0), 55)
+                };
+            }
+            if (origin == "CUE" && dest == "UIO")
+            {
+                return new()
+                {
+                    new("AC1502", new TimeSpan(8, 15, 0), 55),
+                    new("AC1504", new TimeSpan(15, 35, 0), 55),
+                    new("AC1506", new TimeSpan(19, 45, 0), 55)
+                };
+            }
+            if (origin == "GYE" && dest == "CUE")
+            {
+                return new()
+                {
+                    new("AC1601", new TimeSpan(8, 0, 0), 45),
+                    new("AC1603", new TimeSpan(17, 10, 0), 45)
+                };
+            }
+            if (origin == "CUE" && dest == "GYE")
+            {
+                return new()
+                {
+                    new("AC1602", new TimeSpan(9, 0, 0), 45),
+                    new("AC1604", new TimeSpan(18, 10, 0), 45)
+                };
+            }
+            if (origin == "UIO" && dest == "GPS")
+            {
+                return new() { new("AC1701", new TimeSpan(9, 0, 0), 135) };
+            }
+            if (origin == "GPS" && dest == "UIO")
+            {
+                return new() { new("AC1702", new TimeSpan(12, 0, 0), 135) };
+            }
+
+            // Default template for any other route
+            return new()
+            {
+                new("AC1801", new TimeSpan(8, 0, 0), 60),
+                new("AC1803", new TimeSpan(14, 0, 0), 60),
+                new("AC1805", new TimeSpan(19, 30, 0), 60)
+            };
+        }
+
+        private async Task<List<Vuelo>> GetOrGenerateFlightsForLegAsync(string origin, string dest, DateTime searchDate)
+        {
+            origin = origin.Trim().ToUpperInvariant();
+            dest = dest.Trim().ToUpperInvariant();
+            var minDate = searchDate.Date;
+            var maxDate = searchDate.Date.AddDays(1);
+
+            var flights = await _uow.Vuelos.Query()
+                .Include(f => f.TarifasCabina)
+                .Where(f => f.OrigenIata == origin && f.DestinoIata == dest && f.SalidaProgramada >= minDate && f.SalidaProgramada < maxDate)
+                .ToListAsync();
+
+            if (flights.Any())
+            {
+                return flights;
+            }
+
+            var templates = GetRouteTemplates(origin, dest);
+            var dateStr = searchDate.ToString("yyyyMMdd");
+            var generatedFlights = new List<Vuelo>();
+
+            foreach (var tmpl in templates)
+            {
+                var flightId = $"{tmpl.FlightNumber}-{dateStr}";
+                var departureUtc = DateTime.SpecifyKind(searchDate.Date.Add(tmpl.DepartureTime), DateTimeKind.Utc);
+                var arrivalUtc = departureUtc.AddMinutes(tmpl.DurationMinutes);
+
+                var vuelo = new Vuelo
+                {
+                    Id = flightId,
+                    NumeroVuelo = tmpl.FlightNumber,
+                    AerolineaComercial = "AC",
+                    AerolineaOperadora = "AC",
+                    NombreAerolinea = "AEROCACHE",
+                    Aeronave = "Airbus A320",
+                    OrigenIata = origin,
+                    DestinoIata = dest,
+                    SalidaProgramada = departureUtc,
+                    LlegadaProgramada = arrivalUtc,
+                    DuracionMinutos = tmpl.DurationMinutes,
+                    TerminalSalida = "T1",
+                    TerminalLlegada = "T1",
+                    Estado = "ON_TIME",
+                    TarifasCabina = new List<TarifaCabina>
+                    {
+                        new()
+                        {
+                            Id = Guid.NewGuid().ToString(),
+                            VueloId = flightId,
+                            ClaseCabina = "ECONOMY",
+                            MarcaTarifa = "Light",
+                            AsientosDisponibles = 28,
+                            TarifaBase = 49.00m,
+                            Impuestos = 7.35m,
+                            PrecioTotal = 56.35m,
+                            Moneda = "USD",
+                            EsReembolsable = false,
+                            PermiteCambios = true,
+                            ArticuloPersonalIncluido = true,
+                            EquipajeManoIncluido = 0,
+                            EquipajeBodegaIncluido = 0,
+                            PrecioEquipajeAdicional = 20.00m
+                        },
+                        new()
+                        {
+                            Id = Guid.NewGuid().ToString(),
+                            VueloId = flightId,
+                            ClaseCabina = "ECONOMY",
+                            MarcaTarifa = "Plus",
+                            AsientosDisponibles = 22,
+                            TarifaBase = 74.00m,
+                            Impuestos = 11.10m,
+                            PrecioTotal = 85.10m,
+                            Moneda = "USD",
+                            EsReembolsable = false,
+                            PermiteCambios = true,
+                            ArticuloPersonalIncluido = true,
+                            EquipajeManoIncluido = 1,
+                            EquipajeBodegaIncluido = 1,
+                            PrecioEquipajeAdicional = 18.00m
+                        },
+                        new()
+                        {
+                            Id = Guid.NewGuid().ToString(),
+                            VueloId = flightId,
+                            ClaseCabina = "PREMIUM_ECONOMY",
+                            MarcaTarifa = "Top",
+                            AsientosDisponibles = 12,
+                            TarifaBase = 104.00m,
+                            Impuestos = 15.60m,
+                            PrecioTotal = 119.60m,
+                            Moneda = "USD",
+                            EsReembolsable = true,
+                            PermiteCambios = true,
+                            ArticuloPersonalIncluido = true,
+                            EquipajeManoIncluido = 1,
+                            EquipajeBodegaIncluido = 1,
+                            PrecioEquipajeAdicional = 15.00m
+                        }
+                    }
+                };
+
+                generatedFlights.Add(vuelo);
+            }
+
+            foreach (var gf in generatedFlights)
+            {
+                var exists = await _uow.Vuelos.Query().AnyAsync(f => f.Id == gf.Id);
+                if (!exists)
+                {
+                    await _uow.Vuelos.AddAsync(gf);
+                }
+            }
+
+            try
+            {
+                await _uow.CompleteAsync();
+            }
+            catch
+            {
+                // Ignorar colisión si otra petición concurrente insertó el registro
+            }
+
+            return generatedFlights;
+        }
+
+        private (ItineraryOptionDto Itinerary, decimal LowestTotal) BuildItineraryOption(Vuelo flight, int totalPassengers, DateTime searchDate, string itineraryId = "")
+        {
+            var segmentId = $"SEG-{flight.Id}";
+            var dynamicStatus = FlightStatusCalculator.ComputeStatus(flight.SalidaProgramada, flight.DuracionMinutos, flight.Estado, searchDate);
+
+            var segment = new FlightSegmentDto
+            {
+                SegmentId = segmentId,
+                FlightNumber = flight.NumeroVuelo,
+                MarketingCarrier = flight.AerolineaComercial,
+                OperatingCarrier = flight.AerolineaOperadora,
+                Aircraft = flight.Aeronave,
+                DurationMinutes = flight.DuracionMinutos,
+                Status = dynamicStatus,
+                Departure = new FlightEndpoint
+                {
+                    IataCode = flight.OrigenIata,
+                    At = flight.SalidaProgramada.ToString("o"),
+                    Terminal = flight.TerminalSalida
+                },
+                Arrival = new FlightEndpoint
+                {
+                    IataCode = flight.DestinoIata,
+                    At = flight.LlegadaProgramada.ToString("o"),
+                    Terminal = flight.TerminalLlegada
+                }
+            };
+
+            var pricingOptions = new List<CabinPricingDto>();
+            decimal lowestTotal = decimal.MaxValue;
+
+            foreach (var fare in flight.TarifasCabina)
+            {
+                decimal passengerTotal = fare.PrecioTotal * totalPassengers;
+                if (passengerTotal < lowestTotal) lowestTotal = passengerTotal;
+
+                pricingOptions.Add(new CabinPricingDto
+                {
+                    CabinClass = fare.ClaseCabina,
+                    FareBrand = fare.MarcaTarifa,
+                    AvailableSeats = fare.AsientosDisponibles,
+                    FareRules = new FareRulesDto
+                    {
+                        IsRefundable = fare.EsReembolsable,
+                        IsChangeable = fare.PermiteCambios
+                    },
+                    BaggageAllowance = new BaggageAllowanceDto
+                    {
+                        PersonalItemIncluded = fare.ArticuloPersonalIncluido,
+                        CarryOnIncluded = fare.EquipajeManoIncluido,
+                        CheckedBaggageIncluded = fare.EquipajeBodegaIncluido
+                    },
+                    ExtraCheckedBaggagePrice = new MoneyAmount
+                    {
+                        Currency = fare.Moneda,
+                        Total = fare.PrecioEquipajeAdicional.ToString("F2", CultureInfo.InvariantCulture)
+                    },
+                    PricePerPassengerType = new List<PassengerPriceDto>
+                    {
+                        new() {
+                            PassengerType = "ADULT",
+                            Price = new MoneyAmount {
+                                Currency = fare.Moneda,
+                                BaseFare = fare.TarifaBase.ToString("F2", CultureInfo.InvariantCulture),
+                                Taxes = fare.Impuestos.ToString("F2", CultureInfo.InvariantCulture),
+                                Total = fare.PrecioTotal.ToString("F2", CultureInfo.InvariantCulture)
+                            }
+                        }
+                    }
+                });
+            }
+
+            if (lowestTotal == decimal.MaxValue) lowestTotal = 49.00m * totalPassengers;
+
+            var itinOpt = new ItineraryOptionDto
+            {
+                ItineraryId = string.IsNullOrEmpty(itineraryId) ? $"ITIN-{flight.Id}" : itineraryId,
+                TotalDurationMinutes = flight.DuracionMinutos,
+                StopsCount = 0,
+                Segments = new List<FlightSegmentDto> { segment },
+                PricingOptions = pricingOptions
+            };
+
+            return (itinOpt, lowestTotal);
+        }
+
         public async Task<SearchResponse> SearchFlightsAsync(SearchRequest request, string? deviceFingerprint)
         {
             if (request.Itineraries == null || !request.Itineraries.Any())
@@ -43,124 +331,70 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "Ruta inválida", "El origen y destino no pueden ser iguales.");
             }
 
-            DateTime searchDate;
-            if (!DateTime.TryParse(firstItin.DepartureDate, out searchDate))
-            {
-                searchDate = DateTime.UtcNow.Date;
-            }
-
-            var query = _uow.Vuelos.Query()
-                .Include(f => f.TarifasCabina)
-                .Where(f => f.OrigenIata == origin && f.DestinoIata == dest);
-
-            var minDate = searchDate.Date;
-            var maxDate = searchDate.Date.AddDays(1);
-            var flights = await query.Where(f => f.SalidaProgramada >= minDate && f.SalidaProgramada < maxDate).ToListAsync();
-
-            if (!flights.Any())
-            {
-                flights = await query.Take(4).ToListAsync();
-            }
-
             int totalPassengers = (request.Passengers?.Adults ?? 1) + (request.Passengers?.Youths ?? 0) + (request.Passengers?.Children ?? 0);
             if (totalPassengers <= 0) totalPassengers = 1;
 
             var offers = new List<FlightOfferDto>();
 
-            foreach (var flight in flights)
+            if (request.Itineraries.Count >= 2)
             {
-                var offerId = $"OFF-{flight.Id}";
-                var segmentId = $"SEG-{flight.Id}";
-                var dynamicStatus = FlightStatusCalculator.ComputeStatus(flight.SalidaProgramada, flight.DuracionMinutos, flight.Estado, searchDate);
+                // BÚSQUEDA DE IDA Y VUELTA (ROUND-TRIP)
+                var outItin = request.Itineraries[0];
+                var retItin = request.Itineraries[1];
 
-                var segment = new FlightSegmentDto
+                if (!DateTime.TryParse(outItin.DepartureDate, out var outDate)) outDate = DateTime.UtcNow.Date;
+                if (!DateTime.TryParse(retItin.DepartureDate, out var retDate)) retDate = outDate.AddDays(3);
+
+                var outFlights = await GetOrGenerateFlightsForLegAsync(outItin.Origin ?? "UIO", outItin.Destination ?? "GYE", outDate);
+                var retFlights = await GetOrGenerateFlightsForLegAsync(retItin.Origin ?? "GYE", retItin.Destination ?? "UIO", retDate);
+
+                for (int i = 0; i < outFlights.Count; i++)
                 {
-                    SegmentId = segmentId,
-                    FlightNumber = flight.NumeroVuelo,
-                    MarketingCarrier = flight.AerolineaComercial,
-                    OperatingCarrier = flight.AerolineaOperadora,
-                    Aircraft = flight.Aeronave,
-                    DurationMinutes = flight.DuracionMinutos,
-                    Status = dynamicStatus,
-                    Departure = new FlightEndpoint
-                    {
-                        IataCode = flight.OrigenIata,
-                        At = flight.SalidaProgramada.ToString("o"),
-                        Terminal = flight.TerminalSalida
-                    },
-                    Arrival = new FlightEndpoint
-                    {
-                        IataCode = flight.DestinoIata,
-                        At = flight.LlegadaProgramada.ToString("o"),
-                        Terminal = flight.TerminalLlegada
-                    }
-                };
+                    var outF = outFlights[i];
+                    var retF = retFlights[i % retFlights.Count];
 
-                var pricingOptions = new List<CabinPricingDto>();
-                decimal lowestTotal = decimal.MaxValue;
+                    var (outItinOpt, outLowest) = BuildItineraryOption(outF, totalPassengers, outDate, "ITI-1");
+                    var (retItinOpt, retLowest) = BuildItineraryOption(retF, totalPassengers, retDate, "ITI-2");
 
-                foreach (var fare in flight.TarifasCabina)
-                {
-                    decimal passengerTotal = fare.PrecioTotal * totalPassengers;
-                    if (passengerTotal < lowestTotal) lowestTotal = passengerTotal;
+                    var grandTotal = outLowest + retLowest;
 
-                    pricingOptions.Add(new CabinPricingDto
+                    offers.Add(new FlightOfferDto
                     {
-                        CabinClass = fare.ClaseCabina,
-                        FareBrand = fare.MarcaTarifa,
-                        AvailableSeats = fare.AsientosDisponibles,
-                        FareRules = new FareRulesDto
+                        OfferId = $"OFF-{outF.Id}_{retF.Id}",
+                        Airline = new AirlineInfoDto { Code = "AC", Name = "AEROCACHE" },
+                        Itineraries = new List<ItineraryOptionDto> { outItinOpt, retItinOpt },
+                        GrandTotal = new MoneyAmount
                         {
-                            IsRefundable = fare.EsReembolsable,
-                            IsChangeable = fare.PermiteCambios
-                        },
-                        BaggageAllowance = new BaggageAllowanceDto
-                        {
-                            PersonalItemIncluded = fare.ArticuloPersonalIncluido,
-                            CarryOnIncluded = fare.EquipajeManoIncluido,
-                            CheckedBaggageIncluded = fare.EquipajeBodegaIncluido
-                        },
-                        ExtraCheckedBaggagePrice = new MoneyAmount
-                        {
-                            Currency = fare.Moneda,
-                            Total = fare.PrecioEquipajeAdicional.ToString("F2", CultureInfo.InvariantCulture)
-                        },
-                        PricePerPassengerType = new List<PassengerPriceDto>
-                        {
-                            new() {
-                                PassengerType = "ADULT",
-                                Price = new MoneyAmount {
-                                    Currency = fare.Moneda,
-                                    BaseFare = fare.TarifaBase.ToString("F2", CultureInfo.InvariantCulture),
-                                    Taxes = fare.Impuestos.ToString("F2", CultureInfo.InvariantCulture),
-                                    Total = fare.PrecioTotal.ToString("F2", CultureInfo.InvariantCulture)
-                                }
-                            }
+                            Currency = "USD",
+                            Total = grandTotal.ToString("F2", CultureInfo.InvariantCulture)
                         }
                     });
                 }
+            }
+            else
+            {
+                // BÚSQUEDA DE SOLO IDA (ONE-WAY)
+                var itin = request.Itineraries[0];
+                if (!DateTime.TryParse(itin.DepartureDate, out var searchDate)) searchDate = DateTime.UtcNow.Date;
 
-                offers.Add(new FlightOfferDto
+                var flights = await GetOrGenerateFlightsForLegAsync(origin, dest, searchDate);
+
+                foreach (var flight in flights)
                 {
-                    OfferId = offerId,
-                    Airline = new AirlineInfoDto { Code = "AC", Name = "AEROCACHE" },
-                    Itineraries = new List<ItineraryOptionDto>
+                    var (itinOpt, lowestTotal) = BuildItineraryOption(flight, totalPassengers, searchDate, $"ITIN-{flight.Id}");
+
+                    offers.Add(new FlightOfferDto
                     {
-                        new()
+                        OfferId = $"OFF-{flight.Id}",
+                        Airline = new AirlineInfoDto { Code = "AC", Name = "AEROCACHE" },
+                        Itineraries = new List<ItineraryOptionDto> { itinOpt },
+                        GrandTotal = new MoneyAmount
                         {
-                            ItineraryId = $"ITIN-{flight.Id}",
-                            TotalDurationMinutes = flight.DuracionMinutos,
-                            StopsCount = 0,
-                            Segments = new List<FlightSegmentDto> { segment },
-                            PricingOptions = pricingOptions
+                            Currency = "USD",
+                            Total = lowestTotal.ToString("F2", CultureInfo.InvariantCulture)
                         }
-                    },
-                    GrandTotal = new MoneyAmount
-                    {
-                        Currency = "USD",
-                        Total = (lowestTotal == decimal.MaxValue ? 49.00m : lowestTotal).ToString("F2", CultureInfo.InvariantCulture)
-                    }
-                });
+                    });
+                }
             }
 
             return new SearchResponse

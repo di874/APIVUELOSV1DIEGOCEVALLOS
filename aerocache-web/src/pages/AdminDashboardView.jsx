@@ -67,16 +67,23 @@ export default function AdminDashboardView({ onLogout }) {
   // Create Flight Modal State
   const [showCreateFlightModal, setShowCreateFlightModal] = useState(false);
   const [creatingFlight, setCreatingFlight] = useState(false);
-  const [newFlightData, setNewFlightData] = useState({
-    flightNumber: 'AC1502',
-    originIata: 'UIO',
-    originCity: 'Quito',
-    destinationIata: 'GPS',
-    destinationCity: 'Galápagos (Baltra)',
-    departureTime: '',
-    durationMinutes: 50,
-    aircraft: 'Airbus A320',
-    basePrice: 49.00
+  const [newFlightData, setNewFlightData] = useState(() => {
+    const tmrw = new Date();
+    tmrw.setDate(tmrw.getDate() + 1);
+    tmrw.setHours(8, 30, 0, 0);
+    const pad = (n) => String(n).padStart(2, '0');
+    const defaultLocalTime = `${tmrw.getFullYear()}-${pad(tmrw.getMonth() + 1)}-${pad(tmrw.getDate())}T08:30`;
+    return {
+      flightNumber: 'AC1502',
+      originIata: 'UIO',
+      originCity: 'Quito',
+      destinationIata: 'GPS',
+      destinationCity: 'Galápagos (Baltra)',
+      departureTime: defaultLocalTime,
+      durationMinutes: 50,
+      aircraft: 'Airbus A320',
+      basePrice: 49.00
+    };
   });
 
   // Routes CRUD State

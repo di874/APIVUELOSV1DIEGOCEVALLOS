@@ -191,3 +191,6 @@ app.MapFallback(async context =>
 });
 
 app.Run();
+
+public partial class Program { }
+

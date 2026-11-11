@@ -7,6 +7,9 @@ namespace Aerocache.API.Controllers
 {
     [ApiController]
     [Route("admin")]
+    [Route("vuelos/admin")]
+    [Route("api/v2/vuelos/admin")]
+    [Route("api/v2/admin")]
     public class AdminController : ControllerBase
     {
         private readonly IAdminService _adminService;

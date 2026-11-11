@@ -255,7 +255,16 @@ namespace Aerocache.Business.Services
             var pricingOptions = new List<CabinPricingDto>();
             decimal lowestTotal = decimal.MaxValue;
 
-            foreach (var fare in flight.TarifasCabina)
+            var effectiveFares = (flight.TarifasCabina != null && flight.TarifasCabina.Any())
+                ? flight.TarifasCabina.ToList()
+                : new List<TarifaCabina>
+                {
+                    new() { ClaseCabina = "ECONOMY", MarcaTarifa = "BASIC", AsientosDisponibles = 60, TarifaBase = 49.00m, Impuestos = 7.35m, PrecioTotal = 56.35m, Moneda = "USD", ArticuloPersonalIncluido = true },
+                    new() { ClaseCabina = "ECONOMY", MarcaTarifa = "PLUS", AsientosDisponibles = 50, TarifaBase = 66.00m, Impuestos = 9.90m, PrecioTotal = 75.90m, Moneda = "USD", ArticuloPersonalIncluido = true, EquipajeManoIncluido = 1, PermiteCambios = true },
+                    new() { ClaseCabina = "PREMIUM_ECONOMY", MarcaTarifa = "TOP", AsientosDisponibles = 30, TarifaBase = 91.00m, Impuestos = 13.65m, PrecioTotal = 104.65m, Moneda = "USD", ArticuloPersonalIncluido = true, EquipajeManoIncluido = 1, EquipajeBodegaIncluido = 1, EsReembolsable = true, PermiteCambios = true }
+                };
+
+            foreach (var fare in effectiveFares)
             {
                 decimal passengerTotal = fare.PrecioTotal * totalPassengers;
                 if (passengerTotal < lowestTotal) lowestTotal = passengerTotal;
@@ -406,14 +415,23 @@ namespace Aerocache.Business.Services
 
         public async Task<SeatMapResponse> GetSeatMapAsync(string offerId, string segmentId)
         {
-            // Extract flightId from offerId ("OFF-{flightId}") or segmentId ("SEG-{flightId}")
+            // Extract flightId from segmentId ("SEG-{flightId}") or offerId ("OFF-{flightId}")
             string flightId = "";
-            if (!string.IsNullOrEmpty(offerId) && offerId.StartsWith("OFF-"))
-                flightId = offerId.Substring(4).Trim();
-            else if (!string.IsNullOrEmpty(segmentId) && segmentId.StartsWith("SEG-"))
+            if (!string.IsNullOrEmpty(segmentId) && segmentId.StartsWith("SEG-"))
                 flightId = segmentId.Substring(4).Trim();
+            else if (!string.IsNullOrEmpty(offerId) && offerId.StartsWith("OFF-"))
+            {
+                var clean = offerId.Substring(4).Trim();
+                // Si es ida y vuelta (e.g. AC1401-20261120_AC1402-20261125), tomar el primer segmento por defecto si no vino segmentId
+                var parts = clean.Split('_', StringSplitOptions.RemoveEmptyEntries);
+                flightId = parts[0];
+            }
             else if (!string.IsNullOrEmpty(offerId))
-                flightId = offerId.Trim();
+            {
+                var clean = offerId.Trim();
+                var parts = clean.Split('_', StringSplitOptions.RemoveEmptyEntries);
+                flightId = parts[0];
+            }
 
             // Find all occupied seats for this flight from confirmed or checked-in bookings in the database
             var bookedSeatMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

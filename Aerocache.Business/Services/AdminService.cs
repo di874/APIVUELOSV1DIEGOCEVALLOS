@@ -56,6 +56,7 @@ namespace Aerocache.Business.Services
 
             var flights = await _uow.Vuelos.Query()
                 .Include(f => f.TarifasCabina)
+                .OrderByDescending(f => f.SalidaProgramada)
                 .ToListAsync();
 
             int totalBookings = bookings.Count;
@@ -90,7 +91,7 @@ namespace Aerocache.Business.Services
 
             // Occupancy per flight
             var flightOccupancies = new List<FlightOccupancyDto>();
-            foreach (var f in flights.Take(12))
+            foreach (var f in flights.Take(100))
             {
                 var flightBookings = bookings.Where(b => b.VueloId == f.Id && b.Estado == "CONFIRMED");
                 int bookedSeats = flightBookings.Sum(b => b.Pasajeros.Count);
@@ -251,7 +252,9 @@ namespace Aerocache.Business.Services
             DateTime departure;
             if (!string.IsNullOrWhiteSpace(request.DepartureTime) && DateTime.TryParse(request.DepartureTime, out var dt))
             {
-                departure = dt;
+                departure = dt.Kind == DateTimeKind.Utc 
+                    ? dt 
+                    : (dt.Kind == DateTimeKind.Local ? dt.ToUniversalTime() : DateTime.SpecifyKind(dt, DateTimeKind.Utc));
             }
             else
             {

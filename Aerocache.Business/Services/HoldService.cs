@@ -83,6 +83,60 @@ namespace Aerocache.Business.Services
 
             int ttl = request.TtlMinutes > 0 ? request.TtlMinutes : 15;
 
+            // Validar assignedSeats si se proporcionaron
+            var requestedSeats = request.AssignedSeats?
+                .Where(s => !string.IsNullOrWhiteSpace(s.SeatNumber))
+                .Select(s => s.SeatNumber.Trim().ToUpperInvariant())
+                .Distinct()
+                .ToList() ?? new List<string>();
+
+            if (requestedSeats.Any())
+            {
+                // 1. Validar contra reservas existentes no canceladas
+                var bookedSeats = await _uow.Reservas.Query()
+                    .Where(b => (b.VueloId == primaryFlight.Id || b.VueloId == cleanOfferId) && b.Estado != "CANCELLED")
+                    .SelectMany(b => b.Pasajeros.Select(p => p.NumeroAsientoAsignado))
+                    .Where(s => !string.IsNullOrEmpty(s))
+                    .ToListAsync();
+
+                var bookedSeatSet = new HashSet<string>(bookedSeats.Where(s => !string.IsNullOrEmpty(s))!, StringComparer.OrdinalIgnoreCase);
+                foreach (var seat in requestedSeats)
+                {
+                    if (bookedSeatSet.Contains(seat))
+                    {
+                        throw new AerocacheProblemException(409, "SEAT_TAKEN", "Asiento no disponible", $"El asiento {seat} ya se encuentra reservado.");
+                    }
+                }
+
+                // 2. Validar contra holds activos vigentes
+                var nowUtc = DateTime.UtcNow;
+                var activeHolds = await _uow.BloqueosTemporales.Query()
+                    .Where(h => (h.VueloId == primaryFlight.Id || h.VueloId == cleanOfferId || h.OfertaId == request.OfferId) 
+                                && h.Estado == "HELD" 
+                                && h.FechaExpiracion > nowUtc)
+                    .ToListAsync();
+
+                var heldSeatSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var ah in activeHolds)
+                {
+                    if (!string.IsNullOrWhiteSpace(ah.AsientosAsignados))
+                    {
+                        foreach (var hs in ah.AsientosAsignados.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        {
+                            heldSeatSet.Add(hs.ToUpperInvariant());
+                        }
+                    }
+                }
+
+                foreach (var seat in requestedSeats)
+                {
+                    if (heldSeatSet.Contains(seat))
+                    {
+                        throw new AerocacheProblemException(409, "SEAT_TAKEN", "Asiento no disponible", $"El asiento {seat} ya se encuentra bloqueado por otro hold activo.");
+                    }
+                }
+            }
+
             var hold = new BloqueoTemporal
             {
                 BloqueoId = Guid.NewGuid(),
@@ -102,7 +156,8 @@ namespace Aerocache.Business.Services
                 Adultos = request.PassengersBreakdown?.Adults ?? 1,
                 Jovenes = request.PassengersBreakdown?.Youths ?? 0,
                 Ninos = request.PassengersBreakdown?.Children ?? 0,
-                Bebes = request.PassengersBreakdown?.Infants ?? 0
+                Bebes = request.PassengersBreakdown?.Infants ?? 0,
+                AsientosAsignados = requestedSeats.Any() ? string.Join(",", requestedSeats) : null
             };
 
             await _uow.BloqueosTemporales.AddAsync(hold);

@@ -151,12 +151,16 @@ export async function getMyBookings(email) {
   return data.items || [];
 }
 
-export async function getBookingByPnr(pnr) {
-  const res = await fetch(`${API_BASE}/bookings?pnr=${encodeURIComponent(pnr)}`);
+export async function getBookingByPnr(pnr, lastName = null) {
+  let url = `${API_BASE}/bookings?pnr=${encodeURIComponent(pnr)}`;
+  if (lastName && lastName.trim()) {
+    url += `&lastName=${encodeURIComponent(lastName.trim())}`;
+  }
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Error al listar reservas');
   const data = await res.json();
   if (!data.items || data.items.length === 0) {
-    throw new Error(`No se encontró ninguna reserva con el código PNR "${pnr}"`);
+    throw new Error(`No se encontró ninguna reserva con el código PNR "${pnr}"${lastName ? ` y apellido "${lastName}"` : ''}`);
   }
   return await getBookingDetail(data.items[0].bookingId);
 }

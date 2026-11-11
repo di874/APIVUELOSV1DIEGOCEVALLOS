@@ -88,12 +88,13 @@ namespace Aerocache.Business.Services
                 var afterEvent = await _context.EventosPublicados.FirstOrDefaultAsync(e => e.Id == after);
                 if (afterEvent != null)
                 {
-                    query = query.Where(e => e.Time < afterEvent.Time);
+                    query = query.Where(e => e.Time > afterEvent.Time || (e.Time == afterEvent.Time && string.Compare(e.Id, afterEvent.Id) > 0));
                 }
             }
 
             var eventsList = await query
-                .OrderByDescending(e => e.Time)
+                .OrderBy(e => e.Time)
+                .ThenBy(e => e.Id)
                 .Take(maxLimit)
                 .ToListAsync();
 

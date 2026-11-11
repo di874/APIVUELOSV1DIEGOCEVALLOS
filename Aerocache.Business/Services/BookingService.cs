@@ -123,15 +123,25 @@ namespace Aerocache.Business.Services
 
             var occupiedSeatSet = new HashSet<string>(occupiedSeats.Where(s => !string.IsNullOrEmpty(s))!, StringComparer.OrdinalIgnoreCase);
 
+            var holdSeats = !string.IsNullOrWhiteSpace(hold.AsientosAsignados)
+                ? hold.AsientosAsignados.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
+                : new List<string>();
+            int holdSeatIndex = 0;
+
             foreach (var p in request.Passengers)
             {
                 var requestedSeat = p.AssignedSeats?.FirstOrDefault()?.SeatNumber?.Trim().ToUpperInvariant();
+
+                if (string.IsNullOrEmpty(requestedSeat) && holdSeatIndex < holdSeats.Count)
+                {
+                    requestedSeat = holdSeats[holdSeatIndex++].Trim().ToUpperInvariant();
+                }
 
                 if (!string.IsNullOrEmpty(requestedSeat))
                 {
                     if (occupiedSeatSet.Contains(requestedSeat))
                     {
-                        throw new AerocacheProblemException(409, "SEAT_NOT_AVAILABLE", "Asiento no disponible", 
+                        throw new AerocacheProblemException(409, "SEAT_TAKEN", "Asiento no disponible", 
                             $"El asiento {requestedSeat} ya ha sido reservado por otro cliente en este vuelo. Por favor seleccione otro asiento.");
                     }
                 }
@@ -335,12 +345,21 @@ namespace Aerocache.Business.Services
             };
         }
 
-        public async Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor, string? email = null, string? userId = null)
+        public async Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor, string? email = null, string? userId = null, string? lastName = null)
         {
             var query = _uow.Reservas.Query().Include(b => b.Pasajeros).AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(pnr))
-                query = query.Where(b => b.Pnr == pnr);
+            {
+                var cleanPnr = pnr.Trim().ToUpperInvariant();
+                query = query.Where(b => b.Pnr.ToUpper() == cleanPnr);
+            }
+
+            if (!string.IsNullOrWhiteSpace(lastName))
+            {
+                var cleanLastName = lastName.Trim().ToLowerInvariant();
+                query = query.Where(b => b.Pasajeros.Any(p => p.Apellido.ToLower() == cleanLastName));
+            }
 
             if (!string.IsNullOrWhiteSpace(status))
                 query = query.Where(b => b.Estado == status);

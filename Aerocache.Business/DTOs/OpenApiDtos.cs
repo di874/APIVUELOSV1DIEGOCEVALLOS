@@ -175,6 +175,7 @@ namespace Aerocache.Business.DTOs
     {
         public string SeatNumber { get; set; } = string.Empty;
         public bool IsAvailable { get; set; }
+        public string Status { get; set; } = "AVAILABLE";
         public List<string> Characteristics { get; set; } = new();
     }
 
@@ -209,6 +210,9 @@ namespace Aerocache.Business.DTOs
         public List<ItinerarySelectionDto> ItinerarySelections { get; set; } = new();
         public PassengerBreakdown PassengersBreakdown { get; set; } = new();
         public int TtlMinutes { get; set; } = 15;
+
+        [JsonPropertyName("assignedSeats")]
+        public List<AssignedSeatDto>? AssignedSeats { get; set; }
     }
 
     public class HoldResponse

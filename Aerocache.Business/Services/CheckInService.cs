@@ -14,10 +14,12 @@ namespace Aerocache.Business.Services
     public class CheckInService : ICheckInService
     {
         private readonly IUnitOfWork _uow;
+        private readonly IEventBus? _eventBus;
 
-        public CheckInService(IUnitOfWork uow)
+        public CheckInService(IUnitOfWork uow, IEventBus? eventBus = null)
         {
             _uow = uow;
+            _eventBus = eventBus;
         }
 
         public async Task<CheckInResponse> PerformCheckInAsync(string bookingId)
@@ -78,8 +80,23 @@ namespace Aerocache.Business.Services
                 });
             }
 
+            booking.Estado = "CHECKED_IN";
             booking.FechaActualizacion = DateTime.UtcNow;
             await _uow.CompleteAsync();
+
+            if (_eventBus != null)
+            {
+                await _eventBus.PublishAsync("booking.checked_in", new
+                {
+                    bookingId = booking.ReservaId.ToString(),
+                    pnr = booking.Pnr,
+                    status = "CHECKED_IN",
+                    ownerId = booking.UsuarioId,
+                    partnerOrderId = booking.PartnerOrderId,
+                    packageId = booking.PackageId,
+                    passengersCheckedIn = checkedPassengers.Count
+                });
+            }
 
             return new CheckInResponse
             {

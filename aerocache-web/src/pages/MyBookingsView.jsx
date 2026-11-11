@@ -19,6 +19,7 @@ export default function MyBookingsView({
   targetPnr = null
 }) {
   const [pnrInput, setPnrInput] = useState('');
+  const [lastNameInput, setLastNameInput] = useState('');
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -181,7 +182,7 @@ export default function MyBookingsView({
     setError(null);
     setSuccessMsg(null);
     try {
-      const data = await getBookingByPnr(pnrInput.trim().toUpperCase());
+      const data = await getBookingByPnr(pnrInput.trim().toUpperCase(), lastNameInput.trim() || null);
       setBooking(data);
     } catch (err) {
       setError(err.message);
@@ -601,18 +602,25 @@ export default function MyBookingsView({
           marginBottom: '30px'
         }}>
           <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--color-latam-navy)', marginBottom: '8px' }}>
-            {currentUser ? '¿Deseas consultar otra reserva por código PNR?' : 'Consulta tu reserva con tu código PNR'}
+            {currentUser ? '¿Deseas consultar otra reserva por código PNR y apellido?' : 'Consulta tu reserva con tu código PNR y apellido'}
           </h3>
           <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-            Ingresa el código alfanumérico de 6 caracteres que recibiste al comprar (ejemplo: <strong>AC9521X</strong>).
+            Ingresa tu código PNR de 6 caracteres (ejemplo: <strong>AC9521X</strong>) y tu apellido para consultar o hacer check-in (incluso para compras en Booking).
           </p>
-          <form onSubmit={handleSearch} style={{ display: 'flex', gap: '12px' }}>
+          <form onSubmit={handleSearch} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <input
               type="text"
               placeholder="Código PNR (ej: AC9521X)"
               value={pnrInput}
               onChange={e => setPnrInput(e.target.value)}
-              style={{ flex: 1, padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '15px', textTransform: 'uppercase' }}
+              style={{ flex: 1, minWidth: '180px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '15px', textTransform: 'uppercase' }}
+            />
+            <input
+              type="text"
+              placeholder="Apellido del pasajero (opcional)"
+              value={lastNameInput}
+              onChange={e => setLastNameInput(e.target.value)}
+              style={{ flex: 1, minWidth: '180px', padding: '12px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '15px' }}
             />
             <button
               type="submit"

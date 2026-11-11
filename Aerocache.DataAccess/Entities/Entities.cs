@@ -205,6 +205,9 @@ namespace Aerocache.DataAccess.Entities
 
         [Column("Bebes")]
         public int Bebes { get; set; } = 0;
+
+        [Column("AsientosAsignados")]
+        public string? AsientosAsignados { get; set; }
     }
 
     [Table("Reservas")]

@@ -416,21 +416,62 @@ namespace Aerocache.Business.Services
                 flightId = offerId.Trim();
 
             // Find all occupied seats for this flight from confirmed or checked-in bookings in the database
-            var occupiedSeats = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var bookedSeatMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var heldSeats = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             if (!string.IsNullOrEmpty(flightId))
             {
-                var bookedSeats = await _uow.Reservas.Query()
-                    .Where(b => b.VueloId == flightId && (b.Estado == "CONFIRMED" || b.Estado == "CHECKED_IN"))
-                    .SelectMany(b => b.Pasajeros.Select(p => p.NumeroAsientoAsignado))
-                    .Where(s => !string.IsNullOrEmpty(s))
+                var bookings = await _uow.Reservas.Query()
+                    .Where(b => b.VueloId != null && (b.VueloId == flightId || b.VueloId.Contains(flightId)) && b.Estado != "CANCELLED")
+                    .Include(b => b.Pasajeros)
                     .ToListAsync();
 
-                foreach (var s in bookedSeats)
+                foreach (var b in bookings)
                 {
-                    if (!string.IsNullOrWhiteSpace(s))
-                        occupiedSeats.Add(s.Trim().ToUpperInvariant());
+                    string defaultStatus = b.Estado == "CHECKED_IN" ? "CHECKED_IN" : (b.Estado == "TICKETED" ? "TICKETED" : "BOOKED");
+                    foreach (var p in b.Pasajeros)
+                    {
+                        if (!string.IsNullOrWhiteSpace(p.NumeroAsientoAsignado))
+                        {
+                            var s = p.NumeroAsientoAsignado.Trim().ToUpperInvariant();
+                            string pStatus = (p.TieneCheckIn || b.Estado == "CHECKED_IN") ? "CHECKED_IN" : defaultStatus;
+                            bookedSeatMap[s] = pStatus;
+                        }
+                    }
                 }
+
+                // Holds activos vigentes
+                var nowUtc = DateTime.UtcNow;
+                var activeHolds = await _uow.BloqueosTemporales.Query()
+                    .Where(h => (h.VueloId == flightId || h.OfertaId == offerId || h.VueloId.Contains(flightId) || h.OfertaId.Contains(flightId))
+                                && h.Estado == "HELD" 
+                                && h.FechaExpiracion > nowUtc)
+                    .ToListAsync();
+
+                foreach (var h in activeHolds)
+                {
+                    if (!string.IsNullOrWhiteSpace(h.AsientosAsignados))
+                    {
+                        foreach (var s in h.AsientosAsignados.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        {
+                            heldSeats.Add(s.ToUpperInvariant());
+                        }
+                    }
+                }
+            }
+
+            // Helper function to resolve seat availability & status
+            (bool isAvailable, string status) ResolveSeat(string seatNum)
+            {
+                if (bookedSeatMap.TryGetValue(seatNum, out var bStatus))
+                {
+                    return (false, bStatus);
+                }
+                if (heldSeats.Contains(seatNum))
+                {
+                    return (false, "HELD");
+                }
+                return (true, "AVAILABLE");
             }
 
             // Standard Airbus A320 seat layout: Rows 1 to 24, Seats A, B, C, D, E, F
@@ -448,12 +489,13 @@ namespace Aerocache.Business.Services
                     if (c == "A" || c == "F") chars.Add("WINDOW");
                     if (c == "C" || c == "D") chars.Add("AISLE");
 
-                    bool isTaken = occupiedSeats.Contains(seatNum);
+                    var (isAvail, status) = ResolveSeat(seatNum);
 
                     seats.Add(new SeatMapSeatDto
                     {
                         SeatNumber = seatNum,
-                        IsAvailable = !isTaken,
+                        IsAvailable = isAvail,
+                        Status = status,
                         Characteristics = chars
                     });
                 }
@@ -474,12 +516,13 @@ namespace Aerocache.Business.Services
                     if (c == "C" || c == "D") chars.Add("AISLE");
                     if (r == 11 || r == 12) chars.Add("EMERGENCY_EXIT");
 
-                    bool isTaken = occupiedSeats.Contains(seatNum);
+                    var (isAvail, status) = ResolveSeat(seatNum);
 
                     seats.Add(new SeatMapSeatDto
                     {
                         SeatNumber = seatNum,
-                        IsAvailable = !isTaken,
+                        IsAvailable = isAvail,
+                        Status = status,
                         Characteristics = chars
                     });
                 }

@@ -22,7 +22,7 @@ namespace Aerocache.Business.Interfaces
     {
         Task<BookingDetail> CreateBookingAsync(BookingRequest request, string? idempotencyKey, string? userId = null);
         Task<BookingDetail> GetBookingDetailAsync(string bookingId, string? userId = null);
-        Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor, string? email = null, string? userId = null);
+        Task<BookingListResponse> ListBookingsAsync(string? pnr, string? status, string? createdFrom, string? createdTo, int limit, string? cursor, string? email = null, string? userId = null, string? lastName = null);
         Task<TicketListResponse> GetBookingTicketsAsync(string bookingId);
         Task<TicketDto> GetTicketAsync(string bookingId, string ticketId);
         Task<TicketIssuanceResponse> IssueTicketsAsync(string bookingId, string? idempotencyKey);

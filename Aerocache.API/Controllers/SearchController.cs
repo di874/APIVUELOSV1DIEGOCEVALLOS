@@ -40,8 +40,12 @@ namespace Aerocache.API.Controllers
         [Produces("application/json")]
         [ProducesResponseType(typeof(SeatMapResponse), 200)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 404)]
-        public async Task<IActionResult> GetSeatMap([FromRoute] string offerId, [FromQuery] string segmentId)
+        public async Task<IActionResult> GetSeatMap([FromRoute] string offerId, [FromQuery] string? segmentId = null)
         {
+            if (string.IsNullOrWhiteSpace(segmentId))
+            {
+                segmentId = $"SEG-{offerId.Replace("OFF-", "")}";
+            }
             var result = await _searchService.GetSeatMapAsync(offerId, segmentId);
             return Ok(result);
         }

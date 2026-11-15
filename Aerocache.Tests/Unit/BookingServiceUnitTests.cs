@@ -271,7 +271,7 @@ namespace Aerocache.Tests.Unit
             var (_, hold) = await SeedValidFlightAndHoldAsync(assignedSeats: "9B");
             var req = BuildValidBookingRequest(hold.BloqueoId, seat: null); // Should inherit 9B from hold
 
-            var detail = await _sut.CreateBookingAsync(req, "idem-ok", "usr-diego");
+            var (detail, _) = await _sut.CreateBookingAsync(req, "idem-ok", "usr-diego");
 
             Assert.NotNull(detail);
             Assert.Equal("CONFIRMED", detail.Status);
@@ -294,7 +294,7 @@ namespace Aerocache.Tests.Unit
         {
             var (_, hold) = await SeedValidFlightAndHoldAsync();
             var req = BuildValidBookingRequest(hold.BloqueoId);
-            var created = await _sut.CreateBookingAsync(req, "idem-1", "usr-owner-A");
+            var (created, _) = await _sut.CreateBookingAsync(req, "idem-1", "usr-owner-A");
 
             // Same owner succeeds
             var ownerView = await _sut.GetBookingDetailAsync(created.BookingId, "usr-owner-A");
@@ -312,7 +312,7 @@ namespace Aerocache.Tests.Unit
         public async Task ChangeSeatsV2Async_EmptySeatsCollection_Throws400InvalidSeatRequest()
         {
             var (_, hold) = await SeedValidFlightAndHoldAsync();
-            var created = await _sut.CreateBookingAsync(BuildValidBookingRequest(hold.BloqueoId), "idem-1");
+            var (created, _) = await _sut.CreateBookingAsync(BuildValidBookingRequest(hold.BloqueoId), "idem-1");
 
             var ex = await Assert.ThrowsAsync<AerocacheProblemException>(() =>
                 _sut.ChangeSeatsV2Async(created.BookingId, new SeatChangeRequest { Seats = new() }, "idem-2"));

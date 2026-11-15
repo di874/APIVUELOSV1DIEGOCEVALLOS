@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Aerocache.Business.DTOs;
@@ -24,8 +25,26 @@ namespace Aerocache.Business.Services
             _eventBus = eventBus;
         }
 
-        public async Task<BookingDetail> CreateBookingAsync(BookingRequest request, string? idempotencyKey, string? userId = null)
+        public async Task<(BookingDetail Detail, bool IsReplay)> CreateBookingAsync(BookingRequest request, string? idempotencyKey, string? userId = null)
         {
+            // 1. Idempotencia: Si ya se procesó este Idempotency-Key, responder 200 con la reserva original
+            if (!string.IsNullOrWhiteSpace(idempotencyKey))
+            {
+                var existingIdemp = await _uow.RegistrosIdempotencia.GetByIdAsync(idempotencyKey);
+                if (existingIdemp != null && !string.IsNullOrWhiteSpace(existingIdemp.CuerpoRespuesta))
+                {
+                    try
+                    {
+                        var cached = JsonSerializer.Deserialize<BookingDetail>(existingIdemp.CuerpoRespuesta);
+                        if (cached != null)
+                        {
+                            return (cached, true);
+                        }
+                    }
+                    catch { }
+                }
+            }
+
             if (!Guid.TryParse(request.HoldId, out var holdId))
             {
                 throw new AerocacheProblemException(400, "VALIDATION_FAILED", "HoldId inválido");
@@ -48,12 +67,36 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(410, "HOLD_EXPIRED", "El tiempo de bloqueo de tarifa (Hold) ha expirado.");
             }
 
+            if (hold.Estado == "RELEASED")
+            {
+                throw new AerocacheProblemException(410, "HOLD_EXPIRED", "Hold no activo", "El hold está RELEASED. Vuelve a seleccionar la tarifa. No se realizó ningún cobro.");
+            }
+
             if (hold.Estado == "CONSUMED")
             {
+                // Si ya fue consumido, verificar si corresponde a esta misma compra/orden de Booking
+                var flightPrefix = hold.VueloId.Contains('_') ? hold.VueloId.Split('_')[0] : hold.VueloId;
+                var partnerOrderId = request.SalesChannel?.PartnerOrderId;
+                Reserva? existingSameOrderBooking = null;
+
+                if (!string.IsNullOrWhiteSpace(partnerOrderId))
+                {
+                    existingSameOrderBooking = await _uow.Reservas.Query()
+                        .Include(b => b.Pasajeros)
+                        .Include(b => b.Boletos)
+                        .FirstOrDefaultAsync(b => b.VueloId == flightPrefix && b.PartnerOrderId == partnerOrderId);
+                }
+
+                if (existingSameOrderBooking != null)
+                {
+                    var cachedDetail = await GetBookingDetailAsync(existingSameOrderBooking.ReservaId.ToString(), userId);
+                    return (cachedDetail, true);
+                }
+
                 throw new AerocacheProblemException(409, "ALREADY_CANCELLED", "Este Hold ya ha sido utilizado para otra reserva.");
             }
 
-            var effectivePaymentRef = request.Payment?.GetEffectiveReference();
+            var effectivePaymentRef = request.GetEffectivePaymentReference();
             if (string.IsNullOrWhiteSpace(effectivePaymentRef))
             {
                 throw new AerocacheProblemException(400, "PAYMENT_REFERENCE_INVALID", "Referencia de pago inválida o no provista");
@@ -62,7 +105,8 @@ namespace Aerocache.Business.Services
             // Validar que payment.amount coincida con el total del hold
             if (request.Payment?.Amount != null && !string.IsNullOrWhiteSpace(request.Payment.Amount.Total))
             {
-                if (decimal.TryParse(request.Payment.Amount.Total, NumberStyles.Any, CultureInfo.InvariantCulture, out var paidAmount))
+                var cleanTotalStr = request.Payment.Amount.Total.Replace("$", "").Replace(",", ".").Trim();
+                if (decimal.TryParse(cleanTotalStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var paidAmount))
                 {
                     if (Math.Abs(paidAmount - hold.TotalBloqueado) > 0.05m)
                     {
@@ -79,15 +123,20 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(404, "OFFER_NO_LONGER_AVAILABLE", "Vuelo asociado no encontrado");
             }
 
-            // Validar que las nacionalidades de los pasajeros sean códigos ISO de 2 letras
+            // Validar nacionalidades de pasajeros
             foreach (var p in request.Passengers)
             {
-                var nat = p.Nationality?.Trim().ToUpperInvariant();
+                if (p.Nationality == null)
+                {
+                    p.Nationality = "EC";
+                }
+                var nat = p.Nationality.Trim().ToUpperInvariant();
                 if (string.IsNullOrWhiteSpace(nat) || nat.Length != 2 || !nat.All(char.IsLetter))
                 {
                     throw new AerocacheProblemException(400, "INVALID_NATIONALITY", "Nacionalidad inválida",
                         $"La nacionalidad '{p.Nationality}' para el pasajero {p.FirstName} {p.LastName} debe ser un código ISO de 2 letras (ej. EC).");
                 }
+                p.Nationality = nat;
             }
 
             // Generate realistic 6-character PNR (Latin American airline standard)
@@ -225,7 +274,32 @@ namespace Aerocache.Business.Services
                 });
             }
 
-            return await GetBookingDetailAsync(booking.ReservaId.ToString(), booking.UsuarioId);
+            var detail = await GetBookingDetailAsync(booking.ReservaId.ToString(), booking.UsuarioId);
+
+            if (!string.IsNullOrWhiteSpace(idempotencyKey))
+            {
+                var responseJson = JsonSerializer.Serialize(detail);
+                var existingIdemp = await _uow.RegistrosIdempotencia.GetByIdAsync(idempotencyKey);
+                if (existingIdemp != null)
+                {
+                    existingIdemp.CuerpoRespuesta = responseJson;
+                    existingIdemp.CodigoEstado = 201;
+                    existingIdemp.FechaCreacion = DateTime.UtcNow;
+                }
+                else
+                {
+                    await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                    {
+                        Clave = idempotencyKey,
+                        CodigoEstado = 201,
+                        CuerpoRespuesta = responseJson,
+                        FechaCreacion = DateTime.UtcNow
+                    });
+                }
+                await _uow.CompleteAsync();
+            }
+
+            return (detail, false);
         }
 
         public async Task<BookingDetail> GetBookingDetailAsync(string bookingId, string? userId = null)

@@ -46,11 +46,11 @@ namespace Aerocache.Tests.Unit
                 return Task.FromResult(ListResponseToReturn);
             }
 
-            public Task<BookingDetail> CreateBookingAsync(BookingRequest request, string? idempotencyKey, string? userId = null)
+            public Task<(BookingDetail Detail, bool IsReplay)> CreateBookingAsync(BookingRequest request, string? idempotencyKey, string? userId = null)
             {
                 if (ExceptionToThrow != null) throw ExceptionToThrow;
                 LastCreateArgs = (request, idempotencyKey, userId);
-                return Task.FromResult(DetailResponseToReturn);
+                return Task.FromResult((DetailResponseToReturn, false));
             }
 
             public Task<BookingDetail> GetBookingDetailAsync(string bookingId, string? userId = null)

@@ -279,35 +279,67 @@ namespace Aerocache.Business.Services
 
             if (!string.IsNullOrWhiteSpace(idempotencyKey))
             {
-                await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                var existingIdemp = await _uow.RegistrosIdempotencia.GetByIdAsync(idempotencyKey);
+                if (existingIdemp != null)
                 {
-                    Clave = idempotencyKey,
-                    CodigoEstado = 201,
-                    CuerpoRespuesta = responseJson,
-                    FechaCreacion = DateTime.UtcNow
-                });
+                    existingIdemp.CuerpoRespuesta = responseJson;
+                    existingIdemp.CodigoEstado = 201;
+                    existingIdemp.FechaCreacion = DateTime.UtcNow;
+                }
+                else
+                {
+                    await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                    {
+                        Clave = idempotencyKey,
+                        CodigoEstado = 201,
+                        CuerpoRespuesta = responseJson,
+                        FechaCreacion = DateTime.UtcNow
+                    });
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(correlationId))
             {
-                await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                var corrKey = "CORR_HOLD_" + correlationId;
+                var existingCorr = await _uow.RegistrosIdempotencia.GetByIdAsync(corrKey);
+                if (existingCorr != null)
                 {
-                    Clave = "CORR_HOLD_" + correlationId,
-                    CodigoEstado = 201,
-                    CuerpoRespuesta = responseJson,
-                    FechaCreacion = DateTime.UtcNow
-                });
+                    existingCorr.CuerpoRespuesta = responseJson;
+                    existingCorr.CodigoEstado = 201;
+                    existingCorr.FechaCreacion = DateTime.UtcNow;
+                }
+                else
+                {
+                    await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                    {
+                        Clave = corrKey,
+                        CodigoEstado = 201,
+                        CuerpoRespuesta = responseJson,
+                        FechaCreacion = DateTime.UtcNow
+                    });
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(userId) && requestedSeats.Any())
             {
-                await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                var userKey = $"HOLD_USER_{userId}_{cleanOfferId}_{sortedSeatsStr}";
+                var existingUser = await _uow.RegistrosIdempotencia.GetByIdAsync(userKey);
+                if (existingUser != null)
                 {
-                    Clave = $"HOLD_USER_{userId}_{cleanOfferId}_{sortedSeatsStr}",
-                    CodigoEstado = 201,
-                    CuerpoRespuesta = responseJson,
-                    FechaCreacion = DateTime.UtcNow
-                });
+                    existingUser.CuerpoRespuesta = responseJson;
+                    existingUser.CodigoEstado = 201;
+                    existingUser.FechaCreacion = DateTime.UtcNow;
+                }
+                else
+                {
+                    await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                    {
+                        Clave = userKey,
+                        CodigoEstado = 201,
+                        CuerpoRespuesta = responseJson,
+                        FechaCreacion = DateTime.UtcNow
+                    });
+                }
             }
 
             await _uow.CompleteAsync();
@@ -367,7 +399,18 @@ namespace Aerocache.Business.Services
             var hold = await _uow.BloqueosTemporales.GetByIdAsync(parsedHoldId);
             if (hold == null)
             {
-                throw new AerocacheProblemException(404, "OFFER_NO_LONGER_AVAILABLE", "Hold no encontrado");
+                // Idempotente segun contrato OpenAPI: liberar hold inexistente o ya liberado responde 204
+                return;
+            }
+
+            if (hold.Estado == "CONSUMED")
+            {
+                throw new AerocacheProblemException(409, "HOLD_ALREADY_CONSUMED", "Hold ya consumido", "Un hold CONSUMED ya convertido en reserva no puede liberarse.");
+            }
+
+            if (hold.Estado == "RELEASED")
+            {
+                return;
             }
 
             hold.Estado = "RELEASED";

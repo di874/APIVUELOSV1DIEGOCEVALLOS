@@ -271,7 +271,7 @@ namespace Aerocache.Tests.Unit
                 }
             };
 
-            var booking = await _bookingService.CreateBookingAsync(req1, "idem-pay-1");
+            var (booking, _) = await _bookingService.CreateBookingAsync(req1, "idem-pay-1");
             Assert.NotNull(booking);
             Assert.Equal("CONFIRMED", booking.Status);
             Assert.True(booking.CreatedAt.EndsWith("-05:00"));
@@ -307,6 +307,83 @@ namespace Aerocache.Tests.Unit
             // Second call should return instantly from cache
             var mapCached = await _searchService.GetSeatMapAsync("OFF-AC1401-20261120", "SEG-AC1401-20261120");
             Assert.True(object.ReferenceEquals(map, mapCached));
+        }
+
+        [Fact]
+        public async Task Booking_ReleasedHold_Throws410HoldExpired()
+        {
+            await SeedFlightAsync();
+
+            var (holdResp, _) = await _holdService.CreateHoldAsync(new HoldRequest
+            {
+                OfferId = "OFF-AC1401-20261120"
+            }, "idem-rel-1");
+
+            // Release the hold
+            await _holdService.ReleaseHoldAsync(holdResp.HoldId);
+
+            var req = new BookingRequest
+            {
+                HoldId = holdResp.HoldId,
+                Payment = new PaymentReference { PaymentReferenceValue = "PAY-12345" },
+                Passengers = new List<PassengerItem>
+                {
+                    new()
+                    {
+                        FirstName = "Diego",
+                        LastName = "Cevallos",
+                        DocumentType = "NATIONAL_ID",
+                        DocumentNumber = "1712345678",
+                        Nationality = "EC"
+                    }
+                }
+            };
+
+            var ex = await Assert.ThrowsAsync<AerocacheProblemException>(() =>
+                _bookingService.CreateBookingAsync(req, "idem-rel-book"));
+
+            Assert.Equal(410, ex.StatusCode);
+            Assert.Equal("HOLD_EXPIRED", ex.Code);
+            Assert.Contains("RELEASED", ex.Detail);
+        }
+
+        [Fact]
+        public async Task Booking_RootPaymentReference_CreatesBookingSuccessfully()
+        {
+            await SeedFlightAsync();
+
+            var (holdResp, _) = await _holdService.CreateHoldAsync(new HoldRequest
+            {
+                OfferId = "OFF-AC1401-20261120"
+            }, "idem-root-1");
+
+            var req = new BookingRequest
+            {
+                HoldId = holdResp.HoldId,
+                RootPaymentReference = "PAY-ROOT-9988",
+                Passengers = new List<PassengerItem>
+                {
+                    new()
+                    {
+                        FirstName = "Diego",
+                        LastName = "Cevallos",
+                        DocumentType = "NATIONAL_ID",
+                        DocumentNumber = "1712345678",
+                        Nationality = "EC"
+                    }
+                }
+            };
+
+            var (booking, isReplay) = await _bookingService.CreateBookingAsync(req, "idem-root-book");
+            Assert.NotNull(booking);
+            Assert.False(isReplay);
+            Assert.Equal("CONFIRMED", booking.Status);
+
+            // Replay with same idempotency key returns 200 isReplay = true
+            var (replayed, isReplay2) = await _bookingService.CreateBookingAsync(req, "idem-root-book");
+            Assert.NotNull(replayed);
+            Assert.True(isReplay2);
+            Assert.Equal(booking.BookingId, replayed.BookingId);
         }
     }
 }

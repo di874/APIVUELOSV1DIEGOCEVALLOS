@@ -46,15 +46,24 @@ namespace Aerocache.API.Controllers
         [HttpPost("")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(BookingDetail), 201)]
+        [ProducesResponseType(typeof(BookingDetail), 200)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 400)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 409)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 410)]
+        [ProducesResponseType(typeof(ProblemDetailsDto), 422)]
         public async Task<IActionResult> CreateBooking(
             [FromBody] BookingRequest request,
             [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
             [FromHeader(Name = "X-User-Id")] string? userId = null)
         {
-            var result = await _bookingService.CreateBookingAsync(request, idempotencyKey, userId);
+            var (result, isReplay) = await _bookingService.CreateBookingAsync(request, idempotencyKey, userId);
+            if (isReplay)
+            {
+                if (Response != null) Response.Headers["Idempotent-Replayed"] = "true";
+                return Ok(result);
+            }
+
+            if (Response != null) Response.Headers["Location"] = $"/vuelos/bookings/{result.BookingId}";
             return StatusCode(201, result);
         }
 

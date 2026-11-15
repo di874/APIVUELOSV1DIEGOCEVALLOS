@@ -269,6 +269,7 @@ namespace Aerocache.Business.DTOs
         public List<ExtraBaggageDto>? ExtraBaggage { get; set; }
     }
 
+    [JsonConverter(typeof(PaymentReferenceJsonConverter))]
     public class PaymentReference
     {
         private string _value = string.Empty;
@@ -291,6 +292,50 @@ namespace Aerocache.Business.DTOs
             }
         }
 
+        [JsonPropertyName("reference")]
+        public string? Reference
+        {
+            get => _value;
+            set
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    _value = value;
+            }
+        }
+
+        [JsonPropertyName("paymentId")]
+        public string? PaymentId
+        {
+            get => _value;
+            set
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    _value = value;
+            }
+        }
+
+        [JsonPropertyName("transactionId")]
+        public string? TransactionId
+        {
+            get => _value;
+            set
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    _value = value;
+            }
+        }
+
+        [JsonPropertyName("id")]
+        public string? Id
+        {
+            get => _value;
+            set
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    _value = value;
+            }
+        }
+
         public string GetEffectiveReference() => _value.Trim();
 
         [JsonPropertyName("amount")]
@@ -298,6 +343,79 @@ namespace Aerocache.Business.DTOs
 
         [JsonPropertyName("provider")]
         public string? Provider { get; set; } = "BOOKING_PROTOTIPO";
+    }
+
+    public class PaymentReferenceJsonConverter : JsonConverter<PaymentReference>
+    {
+        public override PaymentReference? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                var str = reader.GetString();
+                return new PaymentReference { PaymentReferenceValue = str ?? string.Empty };
+            }
+
+            if (reader.TokenType == JsonTokenType.StartObject)
+            {
+                using var doc = JsonDocument.ParseValue(ref reader);
+                var root = doc.RootElement;
+                var result = new PaymentReference();
+
+                foreach (var prop in root.EnumerateObject())
+                {
+                    if (prop.NameEquals("paymentReference") ||
+                        prop.NameEquals("paymentReferenceValue") ||
+                        prop.NameEquals("reference") ||
+                        prop.NameEquals("paymentId") ||
+                        prop.NameEquals("transactionId") ||
+                        prop.NameEquals("id"))
+                    {
+                        if (prop.Value.ValueKind == JsonValueKind.String)
+                        {
+                            result.PaymentReferenceValue = prop.Value.GetString() ?? string.Empty;
+                        }
+                    }
+                    else if (prop.NameEquals("amount"))
+                    {
+                        if (prop.Value.ValueKind == JsonValueKind.Object)
+                        {
+                            result.Amount = JsonSerializer.Deserialize<MoneyAmount>(prop.Value.GetRawText(), options);
+                        }
+                    }
+                    else if (prop.NameEquals("provider"))
+                    {
+                        if (prop.Value.ValueKind == JsonValueKind.String)
+                        {
+                            result.Provider = prop.Value.GetString();
+                        }
+                    }
+                }
+                return result;
+            }
+
+            if (reader.TokenType == JsonTokenType.Null)
+            {
+                return new PaymentReference();
+            }
+
+            return new PaymentReference();
+        }
+
+        public override void Write(Utf8JsonWriter writer, PaymentReference value, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("paymentReference", value.GetEffectiveReference());
+            if (value.Amount != null)
+            {
+                writer.WritePropertyName("amount");
+                JsonSerializer.Serialize(writer, value.Amount, options);
+            }
+            if (!string.IsNullOrWhiteSpace(value.Provider))
+            {
+                writer.WriteString("provider", value.Provider);
+            }
+            writer.WriteEndObject();
+        }
     }
 
     public class SalesChannelDto
@@ -317,10 +435,36 @@ namespace Aerocache.Business.DTOs
 
     public class BookingRequest
     {
+        [JsonPropertyName("holdId")]
         public string HoldId { get; set; } = string.Empty;
+
+        [JsonPropertyName("passengers")]
         public List<PassengerItem> Passengers { get; set; } = new();
+
+        [JsonPropertyName("payment")]
         public PaymentReference Payment { get; set; } = new();
+
+        [JsonPropertyName("paymentReference")]
+        public string? RootPaymentReference { get; set; }
+
+        [JsonPropertyName("paymentReferenceValue")]
+        public string? RootPaymentReferenceValue { get; set; }
+
+        [JsonPropertyName("salesChannel")]
         public SalesChannelDto? SalesChannel { get; set; }
+
+        public string GetEffectivePaymentReference()
+        {
+            var pRef = Payment?.GetEffectiveReference();
+            if (!string.IsNullOrWhiteSpace(pRef)) return pRef;
+            if (!string.IsNullOrWhiteSpace(RootPaymentReference)) return RootPaymentReference.Trim();
+            if (!string.IsNullOrWhiteSpace(RootPaymentReferenceValue)) return RootPaymentReferenceValue.Trim();
+            if (SalesChannel?.PartnerId == "BOOKING_PROTOTIPO" || !string.IsNullOrWhiteSpace(SalesChannel?.PartnerOrderId))
+            {
+                return $"PAY-BKP-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+            }
+            return string.Empty;
+        }
     }
 
     public class TicketSegmentDto

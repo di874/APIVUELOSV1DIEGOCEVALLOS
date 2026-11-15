@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Aerocache.Business.DTOs;
+using Aerocache.Business.Helpers;
 using Aerocache.Business.Interfaces;
 using Aerocache.DataAccess.Context;
 using Aerocache.DataAccess.Entities;
@@ -73,7 +74,7 @@ namespace Aerocache.Business.Services
                     new() { Nombre = "postgres", Status = dbUp ? "UP" : "DOWN", LatenciaMs = dbLatency },
                     new() { Nombre = "rabbitmq", Status = "UP", LatenciaMs = 2 }
                 },
-                Timestamp = DateTime.UtcNow.ToString("o")
+                Timestamp = EcuadorTimeHelper.FormatInstantIso(DateTime.UtcNow)
             };
         }
 
@@ -116,7 +117,7 @@ namespace Aerocache.Business.Services
                     Type = e.Type,
                     Source = e.Source,
                     Id = e.Id,
-                    Time = e.Time.ToString("o"),
+                    Time = EcuadorTimeHelper.FormatInstantIso(e.Time),
                     Subject = e.Subject,
                     DataContentType = e.DataContentType,
                     CorrelationId = e.CorrelationId,
@@ -134,7 +135,7 @@ namespace Aerocache.Business.Services
                 {
                     Total = totalCount,
                     NextAfter = cloudEvents.Count == maxLimit ? nextAfter : null,
-                    Timestamp = DateTime.UtcNow.ToString("o")
+                    Timestamp = EcuadorTimeHelper.FormatInstantIso(DateTime.UtcNow)
                 }
             };
         }
@@ -169,7 +170,7 @@ namespace Aerocache.Business.Services
                 CabinasHabilitadas = cabinas,
                 VigenciaHasta = contrato.VigenciaHasta,
                 CondicionesCombo = contrato.CondicionesCombo,
-                ActualizadoEn = contrato.ActualizadoEn.ToString("o")
+                ActualizadoEn = EcuadorTimeHelper.FormatInstantIso(contrato.ActualizadoEn)
             };
         }
 

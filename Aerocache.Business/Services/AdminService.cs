@@ -182,15 +182,15 @@ namespace Aerocache.Business.Services
                 {
                     IataCode = flight.OrigenIata,
                     Terminal = flight.TerminalSalida,
-                    ScheduledAt = flight.SalidaProgramada.ToString("o"),
-                    ActualAt = flight.SalidaReal?.ToString("o")
+                    ScheduledAt = EcuadorTimeHelper.FormatFlightScheduleIso(flight.SalidaProgramada),
+                    ActualAt = EcuadorTimeHelper.FormatFlightScheduleIso(flight.SalidaReal)
                 },
                 Arrival = new FlightStatusEndpoint
                 {
                     IataCode = flight.DestinoIata,
                     Terminal = flight.TerminalLlegada,
-                    ScheduledAt = flight.LlegadaProgramada.ToString("o"),
-                    ActualAt = flight.LlegadaReal?.ToString("o")
+                    ScheduledAt = EcuadorTimeHelper.FormatFlightScheduleIso(flight.LlegadaProgramada),
+                    ActualAt = EcuadorTimeHelper.FormatFlightScheduleIso(flight.LlegadaReal)
                 }
             };
         }
@@ -373,7 +373,7 @@ namespace Aerocache.Business.Services
                 FlightId = flight.Id,
                 FlightNumber = flight.NumeroVuelo,
                 Route = $"{flight.OrigenIata} - {flight.DestinoIata}",
-                ScheduledDeparture = flight.SalidaProgramada.ToString("o"),
+                ScheduledDeparture = EcuadorTimeHelper.FormatFlightScheduleIso(flight.SalidaProgramada),
                 Status = flight.Estado,
                 TotalSeats = 150,
                 BookedSeats = 0,

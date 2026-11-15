@@ -8,6 +8,7 @@ namespace Aerocache.Business
     {
         public static IServiceCollection AddBusiness(this IServiceCollection services)
         {
+            services.AddMemoryCache();
             services.AddScoped<IFlightSearchService, FlightSearchService>();
             services.AddScoped<IHoldService, HoldService>();
             services.AddScoped<IBookingService, BookingService>();

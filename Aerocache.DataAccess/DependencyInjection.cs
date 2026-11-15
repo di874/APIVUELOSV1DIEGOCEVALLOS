@@ -17,7 +17,11 @@ namespace Aerocache.DataAccess
                     (connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase) || 
                      connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase)))
                 {
-                    options.UseNpgsql(connectionString);
+                    options.UseNpgsql(connectionString, npgsqlOptions =>
+                    {
+                        npgsqlOptions.CommandTimeout(30);
+                        npgsqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: System.TimeSpan.FromSeconds(3), errorCodesToAdd: null);
+                    });
                 }
                 else
                 {

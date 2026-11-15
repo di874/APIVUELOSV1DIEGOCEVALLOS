@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Aerocache.Business.DTOs;
 using Aerocache.Business.Exceptions;
+using Aerocache.Business.Helpers;
 using Aerocache.Business.Interfaces;
 using Aerocache.DataAccess.Entities;
 using Aerocache.DataManagement.Interfaces;
@@ -129,7 +130,7 @@ namespace Aerocache.Business.Services
                 new()
                 {
                     ChangeOfferId = offer.OfertaCambioId,
-                    ExpiresAt = offer.FechaExpiracion.ToString("o"),
+                    ExpiresAt = EcuadorTimeHelper.FormatInstantIso(offer.FechaExpiracion),
                     Segments = new List<FlightSegmentDto>
                     {
                         new()
@@ -139,8 +140,8 @@ namespace Aerocache.Business.Services
                             MarketingCarrier = "AC",
                             OperatingCarrier = "AC",
                             DurationMinutes = 50,
-                            Departure = new FlightEndpoint { IataCode = booking.OrigenIata, At = newDate.AddHours(10).ToString("o") },
-                            Arrival = new FlightEndpoint { IataCode = booking.DestinoIata, At = newDate.AddHours(10).AddMinutes(50).ToString("o") }
+                            Departure = new FlightEndpoint { IataCode = booking.OrigenIata, At = EcuadorTimeHelper.FormatFlightScheduleIso(newDate.AddHours(10)) },
+                            Arrival = new FlightEndpoint { IataCode = booking.DestinoIata, At = EcuadorTimeHelper.FormatFlightScheduleIso(newDate.AddHours(10).AddMinutes(50)) }
                         }
                     },
                     PriceDifference = new PriceDifferenceDto
@@ -228,7 +229,7 @@ namespace Aerocache.Business.Services
                 RefundAmount = refund.ToString("F2", CultureInfo.InvariantCulture),
                 PenaltyAmount = penalty.ToString("F2", CultureInfo.InvariantCulture),
                 Currency = "USD",
-                ExpiresAt = quote.FechaExpiracion.ToString("o")
+                ExpiresAt = EcuadorTimeHelper.FormatInstantIso(quote.FechaExpiracion)
             };
         }
 
@@ -284,7 +285,7 @@ namespace Aerocache.Business.Services
                 BookingId = booking.ReservaId.ToString(),
                 Pnr = booking.Pnr,
                 Status = "CANCELLED",
-                CancelledAt = DateTime.UtcNow.ToString("o"),
+                CancelledAt = EcuadorTimeHelper.FormatInstantIso(DateTime.UtcNow),
                 ReasonCode = reasonCode,
                 Refund = new RefundDetailDto
                 {

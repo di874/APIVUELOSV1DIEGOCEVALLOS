@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Aerocache.Business.DTOs;
 using Aerocache.Business.Exceptions;
+using Aerocache.Business.Helpers;
 using Aerocache.Business.Interfaces;
 using Aerocache.DataAccess.Entities;
 using Aerocache.DataManagement.Interfaces;
@@ -20,7 +23,23 @@ namespace Aerocache.Business.Services
             _uow = uow;
         }
 
-        public async Task<HoldResponse> CreateHoldAsync(HoldRequest request, string? idempotencyKey)
+        private static bool IsValidAircraftSeat(string seat)
+        {
+            if (string.IsNullOrWhiteSpace(seat) || seat.Length < 2 || seat.Length > 3)
+                return false;
+
+            char col = char.ToUpperInvariant(seat[^1]);
+            if (col < 'A' || col > 'F')
+                return false;
+
+            var rowStr = seat[..^1];
+            if (!int.TryParse(rowStr, NumberStyles.None, CultureInfo.InvariantCulture, out int row))
+                return false;
+
+            return row >= 1 && row <= 24;
+        }
+
+        public async Task<(HoldResponse Response, bool IsReplay)> CreateHoldAsync(HoldRequest request, string? idempotencyKey, string? correlationId = null, string? userId = null)
         {
             if (string.IsNullOrWhiteSpace(request.OfferId))
             {
@@ -31,6 +50,92 @@ namespace Aerocache.Business.Services
             var flightIds = cleanOfferId.Split('_', StringSplitOptions.RemoveEmptyEntries);
             var primaryFlightId = flightIds[0];
             var secondaryFlightId = flightIds.Length > 1 ? flightIds[1] : null;
+
+            // Validar assignedSeats si se proporcionaron
+            var requestedSeats = request.AssignedSeats?
+                .Where(s => !string.IsNullOrWhiteSpace(s.SeatNumber))
+                .Select(s => s.SeatNumber.Trim().ToUpperInvariant())
+                .Distinct()
+                .ToList() ?? new List<string>();
+
+            // Validar que cada asiento exista en el mapa de la aeronave (Airbus A320: filas 1-24, columnas A-F)
+            foreach (var seat in requestedSeats)
+            {
+                if (!IsValidAircraftSeat(seat))
+                {
+                    throw new AerocacheProblemException(400, "VALIDATION_FAILED", "Asiento inexistente",
+                        $"El asiento {seat} no existe en la configuración de la aeronave (filas 1 a 24, columnas A a F).");
+                }
+            }
+
+            // 1. Verificar idempotencia por Idempotency-Key
+            if (!string.IsNullOrWhiteSpace(idempotencyKey))
+            {
+                var existingIdemp = await _uow.RegistrosIdempotencia.GetByIdAsync(idempotencyKey);
+                if (existingIdemp != null && !string.IsNullOrWhiteSpace(existingIdemp.CuerpoRespuesta))
+                {
+                    try
+                    {
+                        var cached = JsonSerializer.Deserialize<HoldResponse>(existingIdemp.CuerpoRespuesta);
+                        if (cached != null && Guid.TryParse(cached.HoldId, out var hId))
+                        {
+                            var hEntity = await _uow.BloqueosTemporales.GetByIdAsync(hId);
+                            if (hEntity != null && hEntity.Estado == "HELD" && hEntity.FechaExpiracion > DateTime.UtcNow)
+                            {
+                                return (cached, true);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // 2. Verificar idempotencia por X-Correlation-Id
+            if (!string.IsNullOrWhiteSpace(correlationId))
+            {
+                var corrKey = "CORR_HOLD_" + correlationId;
+                var existingCorr = await _uow.RegistrosIdempotencia.GetByIdAsync(corrKey);
+                if (existingCorr != null && !string.IsNullOrWhiteSpace(existingCorr.CuerpoRespuesta))
+                {
+                    try
+                    {
+                        var cached = JsonSerializer.Deserialize<HoldResponse>(existingCorr.CuerpoRespuesta);
+                        if (cached != null && Guid.TryParse(cached.HoldId, out var hId))
+                        {
+                            var hEntity = await _uow.BloqueosTemporales.GetByIdAsync(hId);
+                            if (hEntity != null && hEntity.Estado == "HELD" && hEntity.FechaExpiracion > DateTime.UtcNow)
+                            {
+                                return (cached, true);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // 3. Verificar idempotencia por X-User-Id
+            var sortedSeatsStr = string.Join(",", requestedSeats.OrderBy(s => s));
+            if (!string.IsNullOrWhiteSpace(userId) && requestedSeats.Any())
+            {
+                var userKey = $"HOLD_USER_{userId}_{cleanOfferId}_{sortedSeatsStr}";
+                var existingUser = await _uow.RegistrosIdempotencia.GetByIdAsync(userKey);
+                if (existingUser != null && !string.IsNullOrWhiteSpace(existingUser.CuerpoRespuesta))
+                {
+                    try
+                    {
+                        var cached = JsonSerializer.Deserialize<HoldResponse>(existingUser.CuerpoRespuesta);
+                        if (cached != null && Guid.TryParse(cached.HoldId, out var hId))
+                        {
+                            var hEntity = await _uow.BloqueosTemporales.GetByIdAsync(hId);
+                            if (hEntity != null && hEntity.Estado == "HELD" && hEntity.FechaExpiracion > DateTime.UtcNow)
+                            {
+                                return (cached, true);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
 
             var primaryFlight = await _uow.Vuelos.Query()
                 .Include(f => f.TarifasCabina)
@@ -82,13 +187,6 @@ namespace Aerocache.Business.Services
             }
 
             int ttl = request.TtlMinutes > 0 ? request.TtlMinutes : 15;
-
-            // Validar assignedSeats si se proporcionaron
-            var requestedSeats = request.AssignedSeats?
-                .Where(s => !string.IsNullOrWhiteSpace(s.SeatNumber))
-                .Select(s => s.SeatNumber.Trim().ToUpperInvariant())
-                .Distinct()
-                .ToList() ?? new List<string>();
 
             if (requestedSeats.Any())
             {
@@ -161,13 +259,12 @@ namespace Aerocache.Business.Services
             };
 
             await _uow.BloqueosTemporales.AddAsync(hold);
-            await _uow.CompleteAsync();
 
-            return new HoldResponse
+            var holdResponse = new HoldResponse
             {
                 HoldId = hold.BloqueoId.ToString(),
                 Status = "HELD",
-                ExpiresAt = hold.FechaExpiracion.ToString("o"),
+                ExpiresAt = EcuadorTimeHelper.FormatInstantIso(hold.FechaExpiracion),
                 TtlMinutes = hold.TiempoVidaMinutos,
                 LockedPrice = new MoneyAmount
                 {
@@ -177,6 +274,45 @@ namespace Aerocache.Business.Services
                     Total = totalLocked.ToString("F2", CultureInfo.InvariantCulture)
                 }
             };
+
+            var responseJson = JsonSerializer.Serialize(holdResponse);
+
+            if (!string.IsNullOrWhiteSpace(idempotencyKey))
+            {
+                await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                {
+                    Clave = idempotencyKey,
+                    CodigoEstado = 201,
+                    CuerpoRespuesta = responseJson,
+                    FechaCreacion = DateTime.UtcNow
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(correlationId))
+            {
+                await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                {
+                    Clave = "CORR_HOLD_" + correlationId,
+                    CodigoEstado = 201,
+                    CuerpoRespuesta = responseJson,
+                    FechaCreacion = DateTime.UtcNow
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(userId) && requestedSeats.Any())
+            {
+                await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
+                {
+                    Clave = $"HOLD_USER_{userId}_{cleanOfferId}_{sortedSeatsStr}",
+                    CodigoEstado = 201,
+                    CuerpoRespuesta = responseJson,
+                    FechaCreacion = DateTime.UtcNow
+                });
+            }
+
+            await _uow.CompleteAsync();
+
+            return (holdResponse, false);
         }
 
         public async Task<HoldStatusResponse> GetHoldStatusAsync(string holdId)
@@ -209,7 +345,7 @@ namespace Aerocache.Business.Services
             return new HoldStatusResponse
             {
                 Status = hold.Estado,
-                ExpiresAt = hold.FechaExpiracion.ToString("o"),
+                ExpiresAt = EcuadorTimeHelper.FormatInstantIso(hold.FechaExpiracion),
                 RemainingSeconds = Math.Max(0, remainingSeconds),
                 LockedPrice = new MoneyAmount
                 {

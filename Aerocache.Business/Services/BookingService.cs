@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Aerocache.Business.DTOs;
 using Aerocache.Business.Exceptions;
+using Aerocache.Business.Helpers;
 using Aerocache.Business.Interfaces;
 using Aerocache.DataAccess.Entities;
 using Aerocache.DataManagement.Interfaces;
@@ -52,7 +53,8 @@ namespace Aerocache.Business.Services
                 throw new AerocacheProblemException(409, "ALREADY_CANCELLED", "Este Hold ya ha sido utilizado para otra reserva.");
             }
 
-            if (string.IsNullOrWhiteSpace(request.Payment?.PaymentReferenceValue))
+            var effectivePaymentRef = request.Payment?.GetEffectiveReference();
+            if (string.IsNullOrWhiteSpace(effectivePaymentRef))
             {
                 throw new AerocacheProblemException(400, "PAYMENT_REFERENCE_INVALID", "Referencia de pago inválida o no provista");
             }
@@ -101,7 +103,7 @@ namespace Aerocache.Business.Services
                 MontoTotalGeneral = hold.TotalBloqueado,
                 Moneda = hold.Moneda,
                 FechaCreacion = DateTime.UtcNow,
-                ReferenciaPago = request.Payment?.PaymentReferenceValue ?? string.Empty,
+                ReferenciaPago = effectivePaymentRef ?? string.Empty,
                 VueloId = flight.Id,
                 ItinerarioId = hold.ItinerarioId,
                 ClaseCabina = hold.ClaseCabina,
@@ -219,7 +221,7 @@ namespace Aerocache.Business.Services
                         Currency = booking.Moneda,
                         Total = booking.MontoTotalGeneral.ToString("F2", CultureInfo.InvariantCulture)
                     },
-                    createdAt = booking.FechaCreacion.ToString("o")
+                    createdAt = EcuadorTimeHelper.FormatInstantIso(booking.FechaCreacion)
                 });
             }
 
@@ -267,13 +269,13 @@ namespace Aerocache.Business.Services
                 Departure = new FlightEndpoint
                 {
                     IataCode = booking.OrigenIata,
-                    At = booking.FechaSalida.ToString("o"),
+                    At = EcuadorTimeHelper.FormatFlightScheduleIso(booking.FechaSalida),
                     Terminal = "T1"
                 },
                 Arrival = new FlightEndpoint
                 {
                     IataCode = booking.DestinoIata,
-                    At = booking.FechaSalida.AddMinutes(flight?.DuracionMinutos ?? 50).ToString("o"),
+                    At = EcuadorTimeHelper.FormatFlightScheduleIso(booking.FechaSalida.AddMinutes(flight?.DuracionMinutos ?? 50)),
                     Terminal = "T1"
                 }
             };
@@ -283,8 +285,8 @@ namespace Aerocache.Business.Services
                 BookingId = booking.ReservaId.ToString(),
                 Pnr = booking.Pnr,
                 Status = booking.Estado,
-                CreatedAt = booking.FechaCreacion.ToString("o"),
-                UpdatedAt = booking.FechaActualizacion?.ToString("o"),
+                CreatedAt = EcuadorTimeHelper.FormatInstantIso(booking.FechaCreacion),
+                UpdatedAt = EcuadorTimeHelper.FormatInstantIso(booking.FechaActualizacion),
                 GrandTotal = new MoneyAmount
                 {
                     Currency = booking.Moneda,
@@ -333,7 +335,7 @@ namespace Aerocache.Business.Services
                     PassengerId = t.PasajeroId,
                     ETicketNumber = t.NumeroBoletoElectronico,
                     Status = t.Estado,
-                    IssuedAt = t.FechaEmision.ToString("o"),
+                    IssuedAt = EcuadorTimeHelper.FormatInstantIso(t.FechaEmision),
                     Segments = new List<TicketSegmentDto>
                     {
                         new() { SegmentId = t.SegmentoId, Status = t.Estado, CouponNumber = t.NumeroCupon }
@@ -341,7 +343,7 @@ namespace Aerocache.Business.Services
                 }).ToList(),
                 Changes = string.IsNullOrWhiteSpace(booking.HistorialCambiosJson)
                     ? new List<ChangeHistoryItem>()
-                    : new List<ChangeHistoryItem> { new() { ChangedAt = booking.FechaActualizacion?.ToString("o"), Description = booking.HistorialCambiosJson } }
+                    : new List<ChangeHistoryItem> { new() { ChangedAt = EcuadorTimeHelper.FormatInstantIso(booking.FechaActualizacion), Description = booking.HistorialCambiosJson } }
             };
         }
 
@@ -391,7 +393,7 @@ namespace Aerocache.Business.Services
                         FlightNumber = b.VueloId,
                         PassengerName = p0 != null ? $"{p0.Nombre} {p0.Apellido}".Trim() : null,
                         ContactEmail = p0?.Correo,
-                        CreatedAt = b.FechaCreacion.ToString("o"),
+                        CreatedAt = EcuadorTimeHelper.FormatInstantIso(b.FechaCreacion),
                         GrandTotal = new MoneyAmount
                         {
                             Currency = b.Moneda,
@@ -420,7 +422,7 @@ namespace Aerocache.Business.Services
                     PassengerId = t.PasajeroId,
                     ETicketNumber = t.NumeroBoletoElectronico,
                     Status = t.Estado,
-                    IssuedAt = t.FechaEmision.ToString("o"),
+                    IssuedAt = EcuadorTimeHelper.FormatInstantIso(t.FechaEmision),
                     Segments = new List<TicketSegmentDto>
                     {
                         new() { SegmentId = t.SegmentoId, Status = t.Estado, CouponNumber = t.NumeroCupon }
@@ -444,7 +446,7 @@ namespace Aerocache.Business.Services
                 PassengerId = ticket.PasajeroId,
                 ETicketNumber = ticket.NumeroBoletoElectronico,
                 Status = ticket.Estado,
-                IssuedAt = ticket.FechaEmision.ToString("o"),
+                IssuedAt = EcuadorTimeHelper.FormatInstantIso(ticket.FechaEmision),
                 Segments = new List<TicketSegmentDto>
                 {
                     new() { SegmentId = ticket.SegmentoId, Status = ticket.Estado, CouponNumber = ticket.NumeroCupon }
@@ -515,7 +517,7 @@ namespace Aerocache.Business.Services
                         eTicketNumber = t.NumeroBoletoElectronico,
                         passengerId = t.PasajeroId
                     }).ToList(),
-                    timestamp = DateTime.UtcNow.ToString("o")
+                    timestamp = EcuadorTimeHelper.FormatInstantIso(DateTime.UtcNow)
                 });
             }
 
@@ -532,7 +534,7 @@ namespace Aerocache.Business.Services
                     PassengerId = t.PasajeroId,
                     ETicketNumber = t.NumeroBoletoElectronico,
                     Status = t.Estado,
-                    IssuedAt = t.FechaEmision.ToString("o"),
+                    IssuedAt = EcuadorTimeHelper.FormatInstantIso(t.FechaEmision),
                     Segments = new List<TicketSegmentDto>
                     {
                         new() { SegmentId = t.SegmentoId, Status = t.Estado, CouponNumber = t.NumeroCupon }

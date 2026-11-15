@@ -10,6 +10,7 @@
     <PackageReference Include="SoapCore" Version="1.2.1.18" />
     <PackageReference Include="System.ServiceModel.Primitives" Version="8.1.1" />
     <PackageReference Include="System.ServiceModel.Http" Version="8.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.2" />
   </ItemGroup>
 
   <PropertyGroup>

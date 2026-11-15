@@ -25,12 +25,22 @@ namespace Aerocache.API.Controllers
         [HttpPost("hold")]
         [Produces("application/json")]
         [ProducesResponseType(typeof(HoldResponse), 201)]
+        [ProducesResponseType(typeof(HoldResponse), 200)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 400)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 409)]
         [ProducesResponseType(typeof(ProblemDetailsDto), 422)]
-        public async Task<IActionResult> Hold([FromBody] HoldRequest request, [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+        public async Task<IActionResult> Hold(
+            [FromBody] HoldRequest request, 
+            [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+            [FromHeader(Name = "X-Correlation-Id")] string? correlationId,
+            [FromHeader(Name = "X-User-Id")] string? userId)
         {
-            var result = await _holdService.CreateHoldAsync(request, idempotencyKey);
+            var (result, isReplay) = await _holdService.CreateHoldAsync(request, idempotencyKey, correlationId, userId);
+            if (isReplay)
+            {
+                Response.Headers["Idempotent-Replayed"] = "true";
+                return Ok(result);
+            }
             return StatusCode(201, result);
         }
 

@@ -1,4 +1,5 @@
 using Aerocache.Business.Exceptions;
+using Aerocache.Business.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -270,8 +271,27 @@ namespace Aerocache.Business.DTOs
 
     public class PaymentReference
     {
+        private string _value = string.Empty;
+
         [JsonPropertyName("paymentReference")]
-        public string PaymentReferenceValue { get; set; } = string.Empty;
+        public string PaymentReferenceValue
+        {
+            get => _value;
+            set => _value = value ?? string.Empty;
+        }
+
+        [JsonPropertyName("paymentReferenceValue")]
+        public string? LegacyPaymentReferenceValue
+        {
+            get => _value;
+            set
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    _value = value;
+            }
+        }
+
+        public string GetEffectiveReference() => _value.Trim();
 
         [JsonPropertyName("amount")]
         public MoneyAmount? Amount { get; set; }
@@ -614,7 +634,7 @@ namespace Aerocache.Business.DTOs
         public List<VuelosHealthDependency> Dependencias { get; set; } = new();
 
         [JsonPropertyName("timestamp")]
-        public string Timestamp { get; set; } = DateTime.UtcNow.ToString("o");
+        public string Timestamp { get; set; } = EcuadorTimeHelper.FormatInstantIso(DateTime.UtcNow);
     }
 
     public class VuelosCloudEvent
@@ -632,7 +652,7 @@ namespace Aerocache.Business.DTOs
         public string Id { get; set; } = string.Empty;
 
         [JsonPropertyName("time")]
-        public string Time { get; set; } = DateTime.UtcNow.ToString("o");
+        public string Time { get; set; } = EcuadorTimeHelper.FormatInstantIso(DateTime.UtcNow);
 
         [JsonPropertyName("subject")]
         public string? Subject { get; set; }
@@ -656,7 +676,7 @@ namespace Aerocache.Business.DTOs
         public string? NextAfter { get; set; }
 
         [JsonPropertyName("timestamp")]
-        public string Timestamp { get; set; } = DateTime.UtcNow.ToString("o");
+        public string Timestamp { get; set; } = EcuadorTimeHelper.FormatInstantIso(DateTime.UtcNow);
     }
 
     public class VuelosEventosResponse
@@ -704,7 +724,7 @@ namespace Aerocache.Business.DTOs
         public string Vertical { get; set; } = "VUELOS";
 
         [JsonPropertyName("actualizado_en")]
-        public string ActualizadoEn { get; set; } = DateTime.UtcNow.ToString("o");
+        public string ActualizadoEn { get; set; } = EcuadorTimeHelper.FormatInstantIso(DateTime.UtcNow);
     }
 
     public class ContratoPromocionesUpdateResponse

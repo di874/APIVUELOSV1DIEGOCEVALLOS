@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Aerocache.Business.DTOs;
 using Aerocache.Business.Exceptions;
 using Aerocache.Business.Helpers;
@@ -16,10 +17,12 @@ namespace Aerocache.Business.Services
     public class FlightSearchService : IFlightSearchService
     {
         private readonly IUnitOfWork _uow;
+        private readonly IMemoryCache _cache;
 
-        public FlightSearchService(IUnitOfWork uow)
+        public FlightSearchService(IUnitOfWork uow, IMemoryCache cache)
         {
             _uow = uow;
+            _cache = cache;
         }
 
         private record FlightTemplate(string FlightNumber, TimeSpan DepartureTime, int DurationMinutes);
@@ -241,13 +244,13 @@ namespace Aerocache.Business.Services
                 Departure = new FlightEndpoint
                 {
                     IataCode = flight.OrigenIata,
-                    At = flight.SalidaProgramada.ToString("o"),
+                    At = EcuadorTimeHelper.FormatFlightScheduleIso(flight.SalidaProgramada),
                     Terminal = flight.TerminalSalida
                 },
                 Arrival = new FlightEndpoint
                 {
                     IataCode = flight.DestinoIata,
-                    At = flight.LlegadaProgramada.ToString("o"),
+                    At = EcuadorTimeHelper.FormatFlightScheduleIso(flight.LlegadaProgramada),
                     Terminal = flight.TerminalLlegada
                 }
             };
@@ -415,6 +418,12 @@ namespace Aerocache.Business.Services
 
         public async Task<SeatMapResponse> GetSeatMapAsync(string offerId, string segmentId)
         {
+            string cacheKey = $"SeatMap_{offerId}_{segmentId}";
+            if (_cache.TryGetValue(cacheKey, out SeatMapResponse? cached) && cached != null)
+            {
+                return cached;
+            }
+
             // Extract flightId from segmentId ("SEG-{flightId}") or offerId ("OFF-{flightId}")
             string flightId = "";
             if (!string.IsNullOrEmpty(segmentId) && segmentId.StartsWith("SEG-"))
@@ -440,14 +449,22 @@ namespace Aerocache.Business.Services
             if (!string.IsNullOrEmpty(flightId))
             {
                 var bookings = await _uow.Reservas.Query()
-                    .Where(b => b.VueloId != null && (b.VueloId == flightId || b.VueloId.Contains(flightId)) && b.Estado != "CANCELLED")
-                    .Include(b => b.Pasajeros)
+                    .AsNoTracking()
+                    .Where(b => b.VueloId != null && (b.VueloId == flightId || b.VueloId.StartsWith(flightId + "_") || b.VueloId.EndsWith("_" + flightId) || b.VueloId.Contains(flightId)) && b.Estado != "CANCELLED")
+                    .Select(b => new
+                    {
+                        b.Estado,
+                        Seats = b.Pasajeros
+                            .Where(p => !string.IsNullOrEmpty(p.NumeroAsientoAsignado))
+                            .Select(p => new { p.NumeroAsientoAsignado, p.TieneCheckIn })
+                            .ToList()
+                    })
                     .ToListAsync();
 
                 foreach (var b in bookings)
                 {
                     string defaultStatus = b.Estado == "CHECKED_IN" ? "CHECKED_IN" : (b.Estado == "TICKETED" ? "TICKETED" : "BOOKED");
-                    foreach (var p in b.Pasajeros)
+                    foreach (var p in b.Seats)
                     {
                         if (!string.IsNullOrWhiteSpace(p.NumeroAsientoAsignado))
                         {
@@ -461,16 +478,18 @@ namespace Aerocache.Business.Services
                 // Holds activos vigentes
                 var nowUtc = DateTime.UtcNow;
                 var activeHolds = await _uow.BloqueosTemporales.Query()
-                    .Where(h => (h.VueloId == flightId || h.OfertaId == offerId || h.VueloId.Contains(flightId) || h.OfertaId.Contains(flightId))
+                    .AsNoTracking()
+                    .Where(h => (h.VueloId == flightId || h.OfertaId == offerId || h.VueloId.StartsWith(flightId) || h.VueloId.EndsWith(flightId) || h.VueloId.Contains(flightId))
                                 && h.Estado == "HELD" 
                                 && h.FechaExpiracion > nowUtc)
+                    .Select(h => h.AsientosAsignados)
                     .ToListAsync();
 
-                foreach (var h in activeHolds)
+                foreach (var assigned in activeHolds)
                 {
-                    if (!string.IsNullOrWhiteSpace(h.AsientosAsignados))
+                    if (!string.IsNullOrWhiteSpace(assigned))
                     {
-                        foreach (var s in h.AsientosAsignados.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        foreach (var s in assigned.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                         {
                             heldSeats.Add(s.ToUpperInvariant());
                         }
@@ -548,11 +567,15 @@ namespace Aerocache.Business.Services
             }
             cabins.Add(new SeatMapCabinDto { CabinClass = "ECONOMY", Rows = economyRows });
 
-            return new SeatMapResponse
+            var response = new SeatMapResponse
             {
                 SegmentId = segmentId,
                 Cabins = cabins
             };
+
+            _cache.Set(cacheKey, response, TimeSpan.FromSeconds(3));
+
+            return response;
         }
     }
 }

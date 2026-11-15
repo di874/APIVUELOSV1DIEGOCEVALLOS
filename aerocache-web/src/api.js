@@ -115,11 +115,14 @@ export async function createBooking(holdId, passengerData, paymentRef) {
     ];
   }
 
+  const effectiveRef = paymentRef || ('PAY-' + Math.random().toString(36).substring(2, 8).toUpperCase());
   const body = {
     holdId,
     passengers: paxList,
     payment: {
-      paymentReferenceValue: paymentRef || ('PAY-' + Math.random().toString(36).substring(2, 8).toUpperCase())
+      paymentReference: effectiveRef,
+      paymentReferenceValue: effectiveRef,
+      provider: 'BANCO_PICHINCHA'
     }
   };
 
@@ -194,7 +197,10 @@ export async function addBaggage(bookingId, passengerId, itineraryId, quantity =
     passengerId,
     itineraryId: itineraryId || 'ITIN-1',
     quantity,
-    payment: { paymentReferenceValue: 'BAG-PAY-' + Math.random().toString(36).substring(2, 7).toUpperCase() }
+    payment: { 
+      paymentReference: 'BAG-PAY-' + Math.random().toString(36).substring(2, 7).toUpperCase(),
+      paymentReferenceValue: 'BAG-PAY-' + Math.random().toString(36).substring(2, 7).toUpperCase() 
+    }
   };
   const res = await fetch(`${API_BASE}/bookings/${bookingId}/baggage`, {
     method: 'POST',
@@ -227,7 +233,10 @@ export async function searchDateChange(bookingId, itineraryId, newDepartureDate)
 export async function confirmDateChange(bookingId, changeOfferId) {
   const body = {
     changeOfferId,
-    payment: { paymentReferenceValue: 'CHG-PAY-' + Math.random().toString(36).substring(2, 7).toUpperCase() }
+    payment: { 
+      paymentReference: 'CHG-PAY-' + Math.random().toString(36).substring(2, 7).toUpperCase(),
+      paymentReferenceValue: 'CHG-PAY-' + Math.random().toString(36).substring(2, 7).toUpperCase() 
+    }
   };
   const res = await fetch(`${API_BASE}/bookings/${bookingId}/date-change`, {
     method: 'POST',

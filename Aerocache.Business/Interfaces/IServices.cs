@@ -13,7 +13,7 @@ namespace Aerocache.Business.Interfaces
 
     public interface IHoldService
     {
-        Task<HoldResponse> CreateHoldAsync(HoldRequest request, string? idempotencyKey);
+        Task<(HoldResponse Response, bool IsReplay)> CreateHoldAsync(HoldRequest request, string? idempotencyKey, string? correlationId = null, string? userId = null);
         Task<HoldStatusResponse> GetHoldStatusAsync(string holdId);
         Task ReleaseHoldAsync(string holdId);
     }

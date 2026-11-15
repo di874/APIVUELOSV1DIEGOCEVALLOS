@@ -61,17 +61,17 @@ namespace Aerocache.Business.Services
                 {
                     IataCode = flight.OrigenIata,
                     Terminal = flight.TerminalSalida,
-                    ScheduledAt = scheduledDeparture.ToString("o"),
-                    EstimatedAt = scheduledDeparture.ToString("o"),
-                    ActualAt = dynamicStatus == "ARRIVED" ? scheduledDeparture.ToString("o") : null
+                    ScheduledAt = EcuadorTimeHelper.FormatFlightScheduleIso(scheduledDeparture),
+                    EstimatedAt = EcuadorTimeHelper.FormatFlightScheduleIso(scheduledDeparture),
+                    ActualAt = dynamicStatus == "ARRIVED" ? EcuadorTimeHelper.FormatFlightScheduleIso(scheduledDeparture) : null
                 },
                 Arrival = new FlightStatusEndpoint
                 {
                     IataCode = flight.DestinoIata,
                     Terminal = flight.TerminalLlegada,
-                    ScheduledAt = scheduledArrival.ToString("o"),
-                    EstimatedAt = scheduledArrival.ToString("o"),
-                    ActualAt = dynamicStatus == "ARRIVED" ? scheduledArrival.ToString("o") : null
+                    ScheduledAt = EcuadorTimeHelper.FormatFlightScheduleIso(scheduledArrival),
+                    EstimatedAt = EcuadorTimeHelper.FormatFlightScheduleIso(scheduledArrival),
+                    ActualAt = dynamicStatus == "ARRIVED" ? EcuadorTimeHelper.FormatFlightScheduleIso(scheduledArrival) : null
                 }
             };
         }
@@ -199,13 +199,13 @@ namespace Aerocache.Business.Services
                     Date = f.SalidaProgramada.ToString("yyyy-MM-dd"),
                     Origin = f.OrigenIata,
                     Destination = f.DestinoIata,
-                    DepartureAt = f.SalidaProgramada.ToString("o"),
+                    DepartureAt = EcuadorTimeHelper.FormatFlightScheduleIso(f.SalidaProgramada),
                     Status = dynamicStatus,
                     Aircraft = f.Aeronave,
                     TotalSeats = totalSeats,
                     LoadFactor = loadFactor,
                     ActiveHolds = activeHolds.Count,
-                    NextHoldExpiryAt = activeHolds.OrderBy(h => h.FechaExpiracion).FirstOrDefault()?.FechaExpiracion.ToString("o"),
+                    NextHoldExpiryAt = EcuadorTimeHelper.FormatInstantIso(activeHolds.OrderBy(h => h.FechaExpiracion).FirstOrDefault()?.FechaExpiracion),
                     CheckInOpen = (f.SalidaProgramada - DateTime.UtcNow).TotalHours <= 24 && f.Estado != "CANCELLED",
                     Cabins = new List<CabinInventoryItem>
                     {

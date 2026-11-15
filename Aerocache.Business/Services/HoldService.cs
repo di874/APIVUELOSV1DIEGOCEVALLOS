@@ -68,7 +68,9 @@ namespace Aerocache.Business.Services
                 }
             }
 
-            // 1. Verificar idempotencia por Idempotency-Key
+            // 1. Verificar idempotencia ÚNICAMENTE por Idempotency-Key
+            // Contrato v2: Cada POST /offers/hold con un Idempotency-Key nuevo debe crear un hold nuevo (201 y holdId nuevo).
+            // Solo si se repite el mismo Idempotency-Key se devuelve el hold que ya existe.
             if (!string.IsNullOrWhiteSpace(idempotencyKey))
             {
                 var existingIdemp = await _uow.RegistrosIdempotencia.GetByIdAsync(idempotencyKey);
@@ -90,7 +92,10 @@ namespace Aerocache.Business.Services
                 }
             }
 
-            // 2. Verificar idempotencia por X-Correlation-Id
+            // Si viene el mismo X-Correlation-Id de una misma compra (rehacer hold con assignedSeats),
+            // identificamos el hold previo de esa misma compra para que sus asientos no bloqueen con 409 al nuevo hold,
+            // pero SIEMPRE creamos un hold nuevo (201 y holdId nuevo).
+            Guid? previousHoldIdFromSamePurchase = null;
             if (!string.IsNullOrWhiteSpace(correlationId))
             {
                 var corrKey = "CORR_HOLD_" + correlationId;
@@ -99,38 +104,10 @@ namespace Aerocache.Business.Services
                 {
                     try
                     {
-                        var cached = JsonSerializer.Deserialize<HoldResponse>(existingCorr.CuerpoRespuesta);
-                        if (cached != null && Guid.TryParse(cached.HoldId, out var hId))
+                        var prevCached = JsonSerializer.Deserialize<HoldResponse>(existingCorr.CuerpoRespuesta);
+                        if (prevCached != null && Guid.TryParse(prevCached.HoldId, out var prevHId))
                         {
-                            var hEntity = await _uow.BloqueosTemporales.GetByIdAsync(hId);
-                            if (hEntity != null && hEntity.Estado == "HELD" && hEntity.FechaExpiracion > DateTime.UtcNow)
-                            {
-                                return (cached, true);
-                            }
-                        }
-                    }
-                    catch { }
-                }
-            }
-
-            // 3. Verificar idempotencia por X-User-Id
-            var sortedSeatsStr = string.Join(",", requestedSeats.OrderBy(s => s));
-            if (!string.IsNullOrWhiteSpace(userId) && requestedSeats.Any())
-            {
-                var userKey = $"HOLD_USER_{userId}_{cleanOfferId}_{sortedSeatsStr}";
-                var existingUser = await _uow.RegistrosIdempotencia.GetByIdAsync(userKey);
-                if (existingUser != null && !string.IsNullOrWhiteSpace(existingUser.CuerpoRespuesta))
-                {
-                    try
-                    {
-                        var cached = JsonSerializer.Deserialize<HoldResponse>(existingUser.CuerpoRespuesta);
-                        if (cached != null && Guid.TryParse(cached.HoldId, out var hId))
-                        {
-                            var hEntity = await _uow.BloqueosTemporales.GetByIdAsync(hId);
-                            if (hEntity != null && hEntity.Estado == "HELD" && hEntity.FechaExpiracion > DateTime.UtcNow)
-                            {
-                                return (cached, true);
-                            }
+                            previousHoldIdFromSamePurchase = prevHId;
                         }
                     }
                     catch { }
@@ -217,6 +194,14 @@ namespace Aerocache.Business.Services
                 var heldSeatSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var ah in activeHolds)
                 {
+                    if (previousHoldIdFromSamePurchase.HasValue && ah.BloqueoId == previousHoldIdFromSamePurchase.Value)
+                    {
+                        // Rehacer el hold dentro de la misma compra: liberar el hold anterior de la misma compra
+                        // para que sus asientos pasen al nuevo hold sin provocar 409 SEAT_TAKEN.
+                        ah.Estado = "RELEASED";
+                        continue;
+                    }
+
                     if (!string.IsNullOrWhiteSpace(ah.AsientosAsignados))
                     {
                         foreach (var hs in ah.AsientosAsignados.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -320,29 +305,8 @@ namespace Aerocache.Business.Services
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(userId) && requestedSeats.Any())
-            {
-                var userKey = $"HOLD_USER_{userId}_{cleanOfferId}_{sortedSeatsStr}";
-                var existingUser = await _uow.RegistrosIdempotencia.GetByIdAsync(userKey);
-                if (existingUser != null)
-                {
-                    existingUser.CuerpoRespuesta = responseJson;
-                    existingUser.CodigoEstado = 201;
-                    existingUser.FechaCreacion = DateTime.UtcNow;
-                }
-                else
-                {
-                    await _uow.RegistrosIdempotencia.AddAsync(new RegistroIdempotencia
-                    {
-                        Clave = userKey,
-                        CodigoEstado = 201,
-                        CuerpoRespuesta = responseJson,
-                        FechaCreacion = DateTime.UtcNow
-                    });
-                }
-            }
-
             await _uow.CompleteAsync();
+            FlightSearchService.InvalidateSeatMapCache();
 
             return (holdResponse, false);
         }
@@ -415,6 +379,7 @@ namespace Aerocache.Business.Services
 
             hold.Estado = "RELEASED";
             await _uow.CompleteAsync();
+            FlightSearchService.InvalidateSeatMapCache();
         }
     }
 }

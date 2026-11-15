@@ -18,6 +18,12 @@ namespace Aerocache.Business.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IMemoryCache _cache;
+        private static long _seatMapCacheVersion = 0;
+
+        public static void InvalidateSeatMapCache()
+        {
+            System.Threading.Interlocked.Increment(ref _seatMapCacheVersion);
+        }
 
         public FlightSearchService(IUnitOfWork uow, IMemoryCache cache)
         {
@@ -418,7 +424,8 @@ namespace Aerocache.Business.Services
 
         public async Task<SeatMapResponse> GetSeatMapAsync(string offerId, string segmentId)
         {
-            string cacheKey = $"SeatMap_{offerId}_{segmentId}";
+            long currentVersion = System.Threading.Interlocked.Read(ref _seatMapCacheVersion);
+            string cacheKey = $"SeatMap_v{currentVersion}_{offerId}_{segmentId}";
             if (_cache.TryGetValue(cacheKey, out SeatMapResponse? cached) && cached != null)
             {
                 return cached;

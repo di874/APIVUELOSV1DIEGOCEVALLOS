@@ -159,11 +159,11 @@ namespace Aerocache.Tests.Unit
         }
 
         [Fact]
-        public async Task Hold_ReattemptWithSameCorrelationId_ReturnsSameHoldWithout409()
+        public async Task Hold_ReattemptWithSameCorrelationId_CreatesNewHoldIdWithout409AndSurvivesDeleteOfPreviousHold()
         {
             await SeedFlightAsync();
 
-            var req = new HoldRequest
+            var req1 = new HoldRequest
             {
                 OfferId = "OFF-AC1401-20261120",
                 AssignedSeats = new List<AssignedSeatDto>
@@ -172,13 +172,19 @@ namespace Aerocache.Tests.Unit
                 }
             };
 
-            var (res1, isReplay1) = await _holdService.CreateHoldAsync(req, null, "corr-combo-9988");
+            var (res1, isReplay1) = await _holdService.CreateHoldAsync(req1, "idem-step-1", "corr-combo-9988", "booking-shared-user");
             Assert.False(isReplay1);
 
-            // Re-intento de la saga con el mismo correlationId
-            var (res2, isReplay2) = await _holdService.CreateHoldAsync(req, null, "corr-combo-9988");
-            Assert.True(isReplay2);
-            Assert.Equal(res1.HoldId, res2.HoldId);
+            // Rehacer el hold en la misma compra con nuevo Idempotency-Key y mismo correlationId
+            var (res2, isReplay2) = await _holdService.CreateHoldAsync(req1, "idem-step-2", "corr-combo-9988", "booking-shared-user");
+            Assert.False(isReplay2);
+            Assert.NotEqual(res1.HoldId, res2.HoldId);
+
+            // Booking libera el hold anterior con DELETE; el nuevo hold debe permanecer HELD
+            await _holdService.ReleaseHoldAsync(res1.HoldId);
+
+            var status2 = await _holdService.GetHoldStatusAsync(res2.HoldId);
+            Assert.Equal("HELD", status2.Status);
         }
 
         [Fact]

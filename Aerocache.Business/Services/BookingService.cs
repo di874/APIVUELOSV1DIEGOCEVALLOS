@@ -259,6 +259,7 @@ namespace Aerocache.Business.Services
 
             await _uow.Reservas.AddAsync(booking);
             await _uow.CompleteAsync();
+            FlightSearchService.InvalidateSeatMapCache();
 
             if (_eventBus != null)
             {

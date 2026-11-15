@@ -198,7 +198,12 @@ namespace Aerocache.Business.Services
                 }
                 else
                 {
-                    for (int r = 4; r <= 24; r++)
+                    bool isPremium = hold.ClaseCabina?.Equals("PREMIUM_ECONOMY", StringComparison.OrdinalIgnoreCase) == true
+                                  || hold.ClaseCabina?.Equals("BUSINESS", StringComparison.OrdinalIgnoreCase) == true;
+                    int startRow = isPremium ? 1 : 4;
+                    int endRow = isPremium ? 3 : 24;
+
+                    for (int r = startRow; r <= endRow; r++)
                     {
                         foreach (var col in new[] { "A", "B", "C", "D", "E", "F" })
                         {
@@ -211,7 +216,7 @@ namespace Aerocache.Business.Services
                         }
                         if (!string.IsNullOrEmpty(requestedSeat)) break;
                     }
-                    if (string.IsNullOrEmpty(requestedSeat)) requestedSeat = "14A";
+                    if (string.IsNullOrEmpty(requestedSeat)) requestedSeat = isPremium ? "2A" : "14A";
                 }
 
                 occupiedSeatSet.Add(requestedSeat);

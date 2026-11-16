@@ -42,25 +42,45 @@ namespace Aerocache.API.Workers
             _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         }
 
+        private const string DefaultCloudAmqpUrl = "amqps://yleyvkuv:bdN-Fu09ZlYTdlijVVB2um3VtegoSLru@leopard.lmq.cloudamqp.com/yleyvkuv";
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("🚀 [MS.G.Webhooks] Iniciando Worker despachador de eventos...");
 
-            var host = _config["RabbitMQ:HostName"] ?? "localhost";
-            var portStr = _config["RabbitMQ:Port"];
-            int port = int.TryParse(portStr, out var p) ? p : 5672;
-            var user = _config["RabbitMQ:UserName"] ?? "guest";
-            var pass = _config["RabbitMQ:Password"] ?? "guest";
+            var amqpUrl = _config["RabbitMQ:Url"]
+                ?? Environment.GetEnvironmentVariable("RABBITMQ_URL")
+                ?? DefaultCloudAmqpUrl;
 
-            var factory = new ConnectionFactory
+            var host = _config["RabbitMQ:HostName"];
+            ConnectionFactory factory;
+
+            if (!string.IsNullOrWhiteSpace(host) && host != "localhost")
             {
-                HostName = host,
-                Port = port,
-                UserName = user,
-                Password = pass,
-                AutomaticRecoveryEnabled = true,
-                NetworkRecoveryInterval = TimeSpan.FromSeconds(5)
-            };
+                var portStr = _config["RabbitMQ:Port"];
+                int port = int.TryParse(portStr, out var p) ? p : 5672;
+                var user = _config["RabbitMQ:UserName"] ?? "guest";
+                var pass = _config["RabbitMQ:Password"] ?? "guest";
+
+                factory = new ConnectionFactory
+                {
+                    HostName = host,
+                    Port = port,
+                    UserName = user,
+                    Password = pass,
+                    AutomaticRecoveryEnabled = true,
+                    NetworkRecoveryInterval = TimeSpan.FromSeconds(5)
+                };
+            }
+            else
+            {
+                factory = new ConnectionFactory
+                {
+                    Uri = new Uri(amqpUrl),
+                    AutomaticRecoveryEnabled = true,
+                    NetworkRecoveryInterval = TimeSpan.FromSeconds(5)
+                };
+            }
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -93,6 +113,20 @@ namespace Aerocache.API.Workers
                     await channel.QueueBindAsync(_queueName, _exchangeName, "booking.*", cancellationToken: stoppingToken);
                     await channel.QueueBindAsync(_queueName, _exchangeName, "flight.*", cancellationToken: stoppingToken);
                     await channel.QueueBindAsync(_queueName, _exchangeName, "postsale.*", cancellationToken: stoppingToken);
+                    await channel.QueueBindAsync(_queueName, _exchangeName, "checkin.*", cancellationToken: stoppingToken);
+                    await channel.QueueBindAsync(_queueName, _exchangeName, "ec.edu.epn.#", cancellationToken: stoppingToken);
+
+                    // Declarar cola de historial/auditoría para visualización en CloudAMQP RabbitMQ Manager
+                    const string historyQueue = "aerocache.events.history";
+                    await channel.QueueDeclareAsync(
+                        queue: historyQueue,
+                        durable: true,
+                        exclusive: false,
+                        autoDelete: false,
+                        arguments: null,
+                        cancellationToken: stoppingToken
+                    );
+                    await channel.QueueBindAsync(historyQueue, _exchangeName, "#", cancellationToken: stoppingToken);
 
                     _logger.LogInformation("✓ [MS.G.Webhooks] Cola '{Queue}' vinculada a '{Exchange}' con patrones 'booking.*', 'flight.*', 'postsale.*'",
                         _queueName, _exchangeName);

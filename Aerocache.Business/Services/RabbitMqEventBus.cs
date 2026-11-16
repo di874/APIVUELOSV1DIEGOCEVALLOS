@@ -23,6 +23,8 @@ namespace Aerocache.Business.Services
         private readonly SemaphoreSlim _semaphore = new(1, 1);
         private bool _isInitialized;
 
+        private const string DefaultCloudAmqpUrl = "amqps://yleyvkuv:bdN-Fu09ZlYTdlijVVB2um3VtegoSLru@leopard.lmq.cloudamqp.com/yleyvkuv";
+
         public RabbitMqEventBus(IConfiguration config, ILogger<RabbitMqEventBus> logger, IServiceScopeFactory serviceScopeFactory)
         {
             _config = config;
@@ -30,21 +32,37 @@ namespace Aerocache.Business.Services
             _serviceScopeFactory = serviceScopeFactory;
             _exchangeName = _config["RabbitMQ:ExchangeName"] ?? "aerocache.events";
 
-            var host = _config["RabbitMQ:HostName"] ?? "localhost";
-            var portStr = _config["RabbitMQ:Port"];
-            int port = int.TryParse(portStr, out var p) ? p : 5672;
-            var user = _config["RabbitMQ:UserName"] ?? "guest";
-            var pass = _config["RabbitMQ:Password"] ?? "guest";
+            var amqpUrl = _config["RabbitMQ:Url"]
+                ?? Environment.GetEnvironmentVariable("RABBITMQ_URL")
+                ?? DefaultCloudAmqpUrl;
 
-            _factory = new ConnectionFactory
+            var host = _config["RabbitMQ:HostName"];
+            if (!string.IsNullOrWhiteSpace(host) && host != "localhost")
             {
-                HostName = host,
-                Port = port,
-                UserName = user,
-                Password = pass,
-                AutomaticRecoveryEnabled = true,
-                NetworkRecoveryInterval = TimeSpan.FromSeconds(5)
-            };
+                var portStr = _config["RabbitMQ:Port"];
+                int port = int.TryParse(portStr, out var p) ? p : 5672;
+                var user = _config["RabbitMQ:UserName"] ?? "guest";
+                var pass = _config["RabbitMQ:Password"] ?? "guest";
+
+                _factory = new ConnectionFactory
+                {
+                    HostName = host,
+                    Port = port,
+                    UserName = user,
+                    Password = pass,
+                    AutomaticRecoveryEnabled = true,
+                    NetworkRecoveryInterval = TimeSpan.FromSeconds(5)
+                };
+            }
+            else
+            {
+                _factory = new ConnectionFactory
+                {
+                    Uri = new Uri(amqpUrl),
+                    AutomaticRecoveryEnabled = true,
+                    NetworkRecoveryInterval = TimeSpan.FromSeconds(5)
+                };
+            }
         }
 
         private async Task EnsureConnectedAsync(CancellationToken cancellationToken = default)
@@ -58,7 +76,7 @@ namespace Aerocache.Business.Services
                 if (_isInitialized && _connection != null && _connection.IsOpen && _channel != null && _channel.IsOpen)
                     return;
 
-                _logger.LogInformation("Conectando al Bus de Eventos RabbitMQ en {Host}:{Port}...", _factory.HostName, _factory.Port);
+                _logger.LogInformation("Conectando al Bus de Eventos RabbitMQ en {Endpoint}...", _factory.Endpoint);
                 _connection = await _factory.CreateConnectionAsync(cancellationToken);
                 _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
@@ -70,6 +88,18 @@ namespace Aerocache.Business.Services
                     arguments: null,
                     cancellationToken: cancellationToken
                 );
+
+                // Cola de auditoría/historial para inspección visual en RabbitMQ Manager (CloudAMQP)
+                const string historyQueue = "aerocache.events.history";
+                await _channel.QueueDeclareAsync(
+                    queue: historyQueue,
+                    durable: true,
+                    exclusive: false,
+                    autoDelete: false,
+                    arguments: null,
+                    cancellationToken: cancellationToken
+                );
+                await _channel.QueueBindAsync(historyQueue, _exchangeName, "#", cancellationToken: cancellationToken);
 
                 _isInitialized = true;
                 _logger.LogInformation("✓ RabbitMQ conectado exitosamente. Exchange: '{Exchange}'", _exchangeName);

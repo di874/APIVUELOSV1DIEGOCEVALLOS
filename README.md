@@ -140,6 +140,61 @@ flowchart LR
 
 ---
 
+## 🛡️ API Gateway y Reverse Proxy (Render Cloud Edge Proxy + Nginx + ASP.NET Core Pipeline)
+
+El sistema implementa sus funciones de **API Gateway y Reverse Proxy** combinando tres niveles reales de infraestructura y código:
+
+1. **En Producción Cloud (Render Edge Reverse Proxy / Cloudflare Ingress):**
+   * Recibe todas las peticiones públicas en `https://apivuelosv1diegocevallos.onrender.com` (puerto `443`), realiza la **terminación TLS 1.3 (HTTPS)**, protección DDoS y balanceo de carga, y redirige el tráfico interno al contenedor Kestrel de `.NET` en el puerto dinámico `$PORT` (`Aerocache.API/Program.cs`).
+2. **En Despliegue Multi-Contenedor Docker (`aerocache-web/nginx.conf`):**
+   * Actúa como **Reverse Proxy / API Gateway** en el puerto `80`, sirviendo el portal SPA y enrutando transparentemente los prefijos `/search`, `/offers`, `/bookings`, `/flights`, `/webhooks` y `/swagger` hacia `http://aerocache-api:5200` con inyección de cabeceras `Host` y `X-Real-IP`.
+3. **En el Pipeline de Borde de `Aerocache.API` (Application Gateway Middleware):**
+   * **Enrutamiento Multi-Prefijo (URL Rewriting / Route Mapping):** Todos los controladores aceptan simultáneamente rutas de versión v2 (`/api/v2/vuelos/...`, `/api/v2/...`) y rutas directas (`/vuelos/...`, `/...`) para garantizar compatibilidad total con cualquier cliente de Booking.
+   * **Autenticación y Seguridad OAuth 2.0 / API Key:** Gestión de tokens `Bearer` en `/oauth2/token` (`client_credentials`) y validación de `X-API-Key`.
+   * **Transformación Global de Errores (RFC 7807):** `ProblemDetailsExceptionMiddleware` intercepta cualquier excepción de dominio y la estandariza en `application/problem+json`.
+
+```mermaid
+flowchart LR
+    subgraph Clientes["Clientes y Canales Externos"]
+        C1["Booking Central (Azure)"]
+        C2["Portal Web SPA / Evaluador"]
+        C3["Cliente SOAP Legacy"]
+    end
+
+    subgraph EdgeGateway["Capa 1: Edge Reverse Proxy"]
+        RenderProxy["Render Cloud Reverse Proxy\n(TLS 1.3 HTTPS :443 -> HTTP :$PORT)"]
+        NginxProxy["Nginx Reverse Proxy (Docker)\n(aerocache-web/nginx.conf :80 -> :5200)"]
+    end
+
+    subgraph AppGateway["Capa 2: ASP.NET Core Gateway Pipeline (Program.cs)"]
+        CORS["CORS Policy Middleware (AllowAll)"]
+        RFC7807["ProblemDetailsExceptionMiddleware (RFC 7807)"]
+        Auth["OAuth2Controller (/oauth2/token) & X-API-Key"]
+        Router["Enrutador Multi-Prefijo & Protocolo"]
+    end
+
+    subgraph Upstreams["Servicios Internos Enrutados"]
+        U1["REST v2: /api/v2/vuelos/* y /vuelos/*"]
+        U2["SOAP WSDL: /services/postsale.asmx"]
+        U3["SPA Fallback: wwwroot/index.html"]
+    end
+
+    C1 & C2 & C3 --> RenderProxy & NginxProxy
+    RenderProxy & NginxProxy --> CORS --> RFC7807 --> Auth --> Router
+    Router --> U1 & U2 & U3
+```
+
+### 📍 Ubicación Exacta del API Gateway / Reverse Proxy en el Proyecto
+
+| Componente de Gateway / Proxy | Archivo en el Repositorio | Función Principal |
+| :--- | :--- | :--- |
+| **Render Dynamic Port & Gateway Pipeline** | `Aerocache.API/Program.cs` (líneas 24–29 y 140–191) | Vincula el contenedor al Reverse Proxy de Render (`$PORT`), configura CORS, Swagger, endpoints SOAP y el fallback inteligente que distingue rutas de API (`/api`, `/vuelos`, `/oauth`) de rutas web. |
+| **Nginx Reverse Proxy Config** | `aerocache-web/nginx.conf` (líneas 11–46) | Reglas `proxy_pass http://aerocache-api:5200` e inyección de cabeceras `Host` y `X-Real-IP` para despliegues con Docker Compose. |
+| **Middleware Global de Errores (RFC 7807)** | `Aerocache.API/Middleware/ProblemDetailsExceptionMiddleware.cs` | Intercepta excepciones en el borde de la API y devuelve respuestas formales `ProblemDetailsDto` (`400`, `404`, `409`, `410`, `422`). |
+| **Gateway de Autenticación OAuth 2.0** | `Aerocache.API/Controllers/OAuthController.cs` | Emite tokens JWT bajo el flujo `client_credentials` en `/oauth2/token` y `/oauth/token`. |
+
+---
+
 ## 🏛️ Estructura Completa del Repositorio
 
 ```text

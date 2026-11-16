@@ -99,6 +99,45 @@ sequenceDiagram
     end
 ```
 
+### 🐇 Topología Desplegada en CloudAMQP (RabbitMQ en la Nube) y Cómo Inspeccionarla
+
+El bus de eventos de producción se encuentra desplegado y conectado en vivo sobre **CloudAMQP (`leopard.lmq.cloudamqp.com` — Virtual Host: `yleyvkuv`)** mediante AMQPS (`TLS 1.2/1.3`), además de contar con soporte local en `docker-compose.yml` (`http://localhost:15672`, usuario `guest` / contraseña `guest`).
+
+```mermaid
+flowchart LR
+    subgraph Productores["Productores (.NET 9)"]
+        BS["BookingService"]
+        PS["PostSaleService"]
+        FS["FlightStatusService"]
+    end
+
+    subgraph CloudAMQP["CloudAMQP Broker (leopard.lmq.cloudamqp.com / vhost: yleyvkuv)"]
+        EX{{"Topic Exchange: aerocache.events\n(Durable: true)"}}
+        Q_WH[["Queue: aerocache.webhooks.queue\nBindings: booking.*, flight.*, postsale.*, checkin.*, ec.edu.epn.#"]]
+        Q_HIST[["Queue: aerocache.events.history\nBinding: # (Copia de auditoría e inspección)"]]
+    end
+
+    subgraph Consumidores["Consumidores"]
+        WK["WebhookDispatcherWorker (Render BackgroundService)"]
+        UI["RabbitMQ Manager Web UI (Inspección de Payloads JSON)"]
+    end
+
+    BS & PS & FS -->|"PublishAsync (AMQPS)"| EX
+    EX -->|"Enrutamiento por tópico"| Q_WH
+    EX -->|"Copia de todos los eventos (#)"| Q_HIST
+    Q_WH -->|"BasicConsumeAsync"| WK
+    Q_HIST -.->|"Get Message(s)"| UI
+```
+
+#### 👀 Guía Rápida para Ver las Colas y Mensajes en CloudAMQP:
+1. Ingresar a [CloudAMQP](https://customer.cloudamqp.com) con la cuenta de GitHub del repositorio (`di874` / `cevallosdiego231@gmail.com`), seleccionar la instancia y hacer clic en el botón verde **"RabbitMQ Manager"**.
+2. **Pestaña `Exchanges`:**
+   * Se visualiza el exchange **`aerocache.events`** (`type: topic`, `durable: true`) junto con sus métricas de publicación y sus reglas de enrutamiento (*Bindings*).
+3. **Pestaña `Queues and Streams`:**
+   * **`aerocache.webhooks.queue`**: Cola operativa consumida en tiempo real por `WebhookDispatcherWorker` para despachar notificaciones HTTP `POST` a los webhooks suscritos.
+   * **`aerocache.events.history`**: Cola durable de auditoría vinculada con el comodín `#` que retiene una copia de cada evento emitido (`booking.confirmed`, `booking.ticket_issued`, `checkin.completed`, `booking.cancelled`, etc.).
+   * Para inspeccionar el contenido JSON de los eventos dentro de RabbitMQ: hacer clic en **`aerocache.events.history`** $\rightarrow$ desplegar la sección **`Get messages`** $\rightarrow$ hacer clic en **`Get Message(s)`**.
+
 ---
 
 ## 🏛️ Estructura Completa del Repositorio
